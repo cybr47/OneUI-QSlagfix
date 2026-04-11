@@ -21,6 +21,12 @@ While `10` is a balanced sweet spot, values like `15` may provide slightly bette
 3. Select **System UI** scope.
 4. Restart System UI or Reboot.
 
+## Links
+- [PayPal](https://www.paypal.com/donate/?hosted_button_id=BJAJW4755BXFY)
+- Revolut Tag @danielem47
+- Litecoin/LTC (ltc1qlens88rlj8vpjt9r4kt2mqrma6nq3v3aylgef6)
+- Etherium/ETH (0x2c8d02EA7202eaf9DAC14af6ABc178Cb34Cd3f00)
+
 ## License
 Apache License 2.0.
 
