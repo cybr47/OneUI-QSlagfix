@@ -3,7 +3,7 @@
 A minimal Xposed module to fix frame drops in the Quick Settings panel on Samsung devices when music is playing.
 
 ## The Issue
-Samsung's `AudioVisSeekBar` (QS Media Player) uses a wave animation. By default, it renders with `stepX = 2`, which is an excessive high resolution that forces frequent and expensive path calculations. On midrange devices, this can result in up to 30% CPU usage increase by SystemUI, causing the panel to skip frames when expanding or interacting with the QS panel.
+Samsung's `AudioVisSeekBar` (QS Media Player's progress bar) uses a wave animation. By default, it renders with `stepX = 2`, which is an excessive high resolution that forces frequent and expensive path calculations. On midrange devices, this can result in up to 30% CPU usage increase by SystemUI, causing the panel to skip frames when expanding or interacting with the QS panel.
 
 ## The Fix
 This module hooks the constructor of `MultiWaveAreaTrackRenderer` and forces `stepX` to `10`. This reduces the path complexity significantly with almost no visible impact on the animation quality, eliminating the Quick Settings stutter during music playback.
