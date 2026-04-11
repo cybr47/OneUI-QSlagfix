@@ -1,4 +1,4 @@
-# Samsung Music QS Lag Fix
+# Samsung QS Lag Fix
 
 A minimal Xposed module to fix frame drops in the Quick Settings panel on Samsung devices when music is playing.
 
