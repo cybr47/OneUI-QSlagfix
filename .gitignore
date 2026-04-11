@@ -1,0 +1,38 @@
+# Build and IDE artifacts
+.gradle/
+build/
+*.iml
+.idea/
+
+# Local configuration
+local.properties
+
+# Android Studio / IntelliJ
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+.idea/modules/
+.idea/runConfigurations/
+captures/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Gradle and Wrapper
+.gradle/
+gradlew
+gradlew.bat
+gradle/wrapper/gradle-wrapper.properties
+gradle/wrapper/gradle-wrapper.jar
+
+# Log files
+*.log
+
+# Keystores (Never commit your signing keys!)
+*.jks
+*.keystore
+*.p12

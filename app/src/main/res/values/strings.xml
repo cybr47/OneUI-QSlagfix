@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Samsung Music QS Lag Fix</string>
+    <string name="xposed_description">Optimizes Quick Settings performance by reducing the rendering resolution of the music progress wave animation.</string>
+</resources>

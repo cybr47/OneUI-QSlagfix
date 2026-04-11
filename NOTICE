@@ -1,0 +1,6 @@
+Samsung Music QS Lag Fix
+Copyright (c) 2026
+
+This project implements an optimization for Samsung's AudioVisSeekBar by modifying the 'stepX' parameter.
+
+If you use, redistribute, or incorporate this specific optimization (modifying 'stepX' in MultiWaveAreaTrackRenderer) into another module, project, or ROM, you MUST provide clear acknowledgement of this project as the original source of the tweak in your documentation, NOTICE file, or "About" section.
