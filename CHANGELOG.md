@@ -6,3 +6,4 @@
 - Migrate legacy Xposed 82 to libxposed API 102.0.0, modern lifecycle/entry files, fixed SystemUI scope and protective hooks.
 - Add a checksum-pinned Gradle wrapper and workflow producing app-debug.apk and optimized app-release.apk, APK content checks, certificate details and SHA-256 hashes.
 - Release is non-debuggable, minified, resource shrunk and excludes module diagnostics. Repository signing secrets are supported; absent keys use an explicitly documented test certificate.
+- Use current Node 24 Actions and explicitly install platform-tools; the retired tools SDK package broke the original setup action on GitHub runners.
