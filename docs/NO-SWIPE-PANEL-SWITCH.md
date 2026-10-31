@@ -37,7 +37,7 @@ The switch uses a completed native `slide$1(int)` call instead of a replacement 
 3. Treat the APK's header-height boundary as the requested existing status-bar swipe area. Its exact physical dimensions on the current theme/DPI/orientation need device verification.
 4. Header taps are replayed at release; pressed feedback/long-press behavior and interaction with other modules that also intercept dispatch need device testing.
 5. No phone is connected. Static contracts, regression tests, release stripping, compilation and lint are checked, but real Android input delivery, visual smoothness and battery effects are unverified. No claim of zero stutter or zero battery overhead is made.
-6. API 102 support in the installed LSPosed build must be confirmed on-device. Release signing uses configured repository secrets, or an explicitly labelled test certificate if absent.
+6. API 102 support in the installed LSPosed build must be confirmed on-device. Both APK variants require the repository keystore secrets; builds do not fall back to a test certificate.
 
 ## Validation and device checklist
 

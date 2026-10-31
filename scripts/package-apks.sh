@@ -1,50 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+: "${KEYSTORE_BASE64:?Missing repository secret KEYSTORE_BASE64}"
+: "${KEYSTORE_PASSWORD:?Missing repository secret KEYSTORE_PASSWORD}"
 sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
 : "${sdk_root:?Set ANDROID_HOME or ANDROID_SDK_ROOT}"
 build_tools="$sdk_root/build-tools/36.0.0"
-mkdir -p artifacts
-cp app/build/outputs/apk/debug/app-debug.apk artifacts/app-debug.apk
-release_input=app/build/outputs/apk/release/app-release-unsigned.apk
 
-key_file=""
-trap 'if [[ -n "$key_file" ]]; then unlink "$key_file"; fi' EXIT
-if [[ -n "${KEYSTORE_BASE64:-}" ]]; then
-  : "${KEYSTORE_PASSWORD:?Missing KEYSTORE_PASSWORD}"
-  key_file="$(mktemp)"
-  chmod 600 "$key_file"
-  printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key_file"
-  export KEY_PASSWORD="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
-  alias_args=()
-  if [[ -n "${KEYSTORE_ALIAS:-}" ]]; then alias_args+=(--ks-key-alias "$KEYSTORE_ALIAS"); fi
+key_file="$(mktemp)"
+trap 'unlink "$key_file"' EXIT
+chmod 600 "$key_file"
+printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$key_file"
+export KEY_PASSWORD="${KEY_PASSWORD:-$KEYSTORE_PASSWORD}"
+alias_args=()
+if [[ -n "${KEYSTORE_ALIAS:-}" ]]; then alias_args+=(--ks-key-alias "$KEYSTORE_ALIAS"); fi
+
+mkdir -p artifacts
+for variant in debug release; do
+  if [[ "$variant" == debug ]]; then
+    input=app/build/outputs/apk/debug/app-debug.apk
+  else
+    input=app/build/outputs/apk/release/app-release-unsigned.apk
+  fi
+  # apksigner removes the debug APK's existing test signature before signing.
   "$build_tools/apksigner" sign --ks "$key_file" "${alias_args[@]}" \
     --ks-pass env:KEYSTORE_PASSWORD --key-pass env:KEY_PASSWORD \
-    --out artifacts/app-release.apk "$release_input"
-  signing="repository release key"
-else
-  # Installable optimized test build; a generated debug certificate is not a release identity.
-  # AGP/SDK revisions can put their own debug keystore elsewhere; create ours when absent.
-  if [[ ! -f "$HOME/.android/debug.keystore" ]]; then
-    mkdir -p "$HOME/.android"
-    keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
-      -alias androiddebugkey -storepass android -keypass android -keyalg RSA \
-      -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
-  fi
-  "$build_tools/apksigner" sign --ks "$HOME/.android/debug.keystore" \
-    --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android \
-    --out artifacts/app-release.apk "$release_input"
-  signing="TEST certificate (configure repository signing secrets for stable user releases)"
-fi
-for apk in artifacts/app-debug.apk artifacts/app-release.apk; do
-  "$build_tools/apksigner" verify --verbose --print-certs "$apk" > "$apk.certificate.txt"
+    --v4-signing-enabled false --out "artifacts/app-$variant.apk" "$input"
+  "$build_tools/apksigner" verify --verbose --print-certs \
+    "artifacts/app-$variant.apk" > "artifacts/app-$variant.apk.certificate.txt"
 done
+
 python3 scripts/verify-apks.py artifacts/app-debug.apk artifacts/app-release.apk
+python3 - <<'PY'
+from pathlib import Path
+import re
+certificates = []
+for variant in ("debug", "release"):
+    report = Path(f"artifacts/app-{variant}.apk.certificate.txt").read_text()
+    fingerprints = re.findall(r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$", report, re.M)
+    assert len(fingerprints) == 1, f"{variant}: expected exactly one signing certificate"
+    certificates.append(fingerprints[0].lower())
+assert certificates[0] == certificates[1], "Debug/release signing certificates differ"
+Path("artifacts/SIGNING.txt").write_text(
+    "Signing source: repository keystore secrets\n"
+    f"Debug/release certificate SHA-256: {certificates[0]}\n")
+print("PASS: both APKs use the same repository signing certificate")
+PY
 {
   printf 'Source: %s\n' "${GITHUB_SHA:-$(git rev-parse HEAD)}"
   printf 'Branch: %s\n' "${GITHUB_REF_NAME:-$(git branch --show-current)}"
-  printf 'Release signing: %s\n' "$signing"
+  printf 'Signing: repository keystore secrets (debug and release)\n'
   printf 'Release: R8 optimized, resource shrunk, debuggable=false, diagnostics removed\n'
 } > artifacts/BUILD.txt
 (cd artifacts && sha256sum app-debug.apk app-release.apk > SHA256SUMS.txt)
-if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then cat artifacts/BUILD.txt >> "$GITHUB_STEP_SUMMARY"; fi
+if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+  cat artifacts/BUILD.txt artifacts/SIGNING.txt >> "$GITHUB_STEP_SUMMARY"
+fi

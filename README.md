@@ -27,7 +27,7 @@ The **Build APKs** Actions workflow runs on pushes to both branches and supports
 - `app-release.apk`: R8 optimized, resource shrunk, non-debuggable, module diagnostics removed.
 - `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
 
-For a durable user-release certificate set repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD`; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Without credentials the release build type still has all optimizations, but uses the runner's **test certificate**. BUILD.txt records this. Test certificates can change between runs and are unsuitable for a stable public release/update identity. No key is committed or uploaded. PR builds use test signing.
+Both APK variants are signed with the same repository keystore on push/manual builds. Repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD` are required; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Missing credentials fail the build before compilation; there is no test-key fallback. Certificate verification confirms both APK signatures match and records the public SHA-256 fingerprint in `SIGNING.txt`. The private keystore is temporary and is never committed or uploaded. PR builds run checks without accessing signing secrets or publishing signed APKs. An older test-signed installation must be uninstalled once before installing an APK signed with the repository key.
 
 ## Source rollback
 Pre-work main: `68fd7d47cc6b466690874bab1057e2eb59815e75`.
