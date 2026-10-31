@@ -1,0 +1,54 @@
+name: Build APKs
+
+on:
+  push:
+    branches: [main, no-swipe-panel-switch]
+  pull_request:
+    branches: [main, no-swipe-panel-switch]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Tests, lint, debug and optimized release
+        run: ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
+      - name: Sign and verify APKs
+        env:
+          KEYSTORE_BASE64: ${{ github.event_name != 'pull_request' && secrets.KEYSTORE_BASE64 || '' }}
+          KEYSTORE_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.KEYSTORE_PASSWORD || '' }}
+          KEYSTORE_ALIAS: ${{ github.event_name != 'pull_request' && secrets.KEYSTORE_ALIAS || '' }}
+          KEY_PASSWORD: ${{ github.event_name != 'pull_request' && secrets.KEY_PASSWORD || '' }}
+        run: bash scripts/package-apks.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apks-${{ github.ref_name }}-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checks-${{ github.run_id }}
+          path: |
+            app/build/reports/
+            app/build/outputs/mapping/release/
+          if-no-files-found: ignore
+          retention-days: 14

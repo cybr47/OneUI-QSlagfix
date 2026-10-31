@@ -1,34 +1,37 @@
-# Samsung QS Lag Fix (UN1CA)
+# One UI QS Lag Fix
 
-A minimal Xposed module to fix frame drops in the Quick Settings panel on Samsung devices running the UN1CA 3 ROM when music is playing.
+SystemUI-only libxposed module targeting the supplied Samsung One UI 9 Indian-ROM SystemUI 17 APK. See [APK findings](docs/ONEUI9-ANALYSIS.md) and [changelog](CHANGELOG.md).
 
-## The Issue
-Samsung's `AudioVisSeekBar` (QS Media Player's progress bar) uses a wave animation. By default, on flagship OneUI port ROMs (like UN1CA) it renders with `stepX = 2`, which is an excessive high resolution that forces frequent and expensive path calculations. On midrange devices, this can result in up to 30% CPU usage increase by SystemUI, causing the panel to skip frames when expanding or interacting with the QS panel.
+## Branches
+- **main**: media-wave sampling only; Samsung's panel gestures.
+- **no-swipe-panel-switch**: separate gesture experiment derived from updated main; see that branch's gesture documentation.
 
-## The Fix
-This module hooks the constructor of `MultiWaveAreaTrackRenderer` and forces `stepX` to `10`. This reduces the path complexity significantly with almost no visible impact on the animation quality, eliminating the Quick Settings stutter during music playback.
+The original optimization reduces the legacy media progress wave's sampling resolution (stepX=10). One UI 9 also contains a colourful renderer whose per-style step is clamped to 1..8; this fork uses 8 and reapplies after style updates. This reduces sampling work. Smoothness and battery improvements have not been measured on-device.
 
-While `10` is a balanced sweet spot, values like `15` may provide slightly better performance on very low-end devices. However, anything past `20` results in visual diminishing returns and distorted waves with no measurable improvements to CPU usage.
+## Install and runtime rollback
+1. Use an LSPosed implementation supporting **modern libxposed API 102**.
+2. Install one branch APK, enable it with **System UI / com.android.systemui** scope and reboot.
+3. Both branches share one application ID; install only one variant.
 
-## Target
-- **Package**: `com.android.systemui`
-- **Class**: `com.android.systemui.media.audiovisseekbar.renderer.track.auto.MultiWaveAreaTrackRenderer`
-- **Parameter Modified**: `stepX` (Int)
+Disable this module in LSPosed and reboot to restore stock behavior. To keep media sampling and discard the gesture experiment, install the main APK (same certificate; its older versionCode may require uninstalling the branch APK first), enable it and reboot. If SystemUI is unusable, follow your LSPosed implementation's documented module-disable/recovery procedure.
 
-## Installation
-1. Install APK.
-2. Enable in LSPosed/Xposed.
-3. Select **System UI** scope.
-4. Restart System UI or Reboot.
+## Build
+JDK 21, SDK platform 36 and build-tools 36.0.0:
+```sh
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
+ANDROID_HOME=/path/to/android-sdk bash scripts/package-apks.sh
+```
 
-## Links
-- [PayPal](https://www.paypal.com/donate/?hosted_button_id=BJAJW4755BXFY)
-- Revolut Tag @danielem47
-- Litecoin/LTC (ltc1qlens88rlj8vpjt9r4kt2mqrma6nq3v3aylgef6)
-- Etherium/ETH (0x2c8d02EA7202eaf9DAC14af6ABc178Cb34Cd3f00)
+The **Build APKs** Actions workflow runs on pushes to both branches and supports manual dispatch. Artifacts contain:
+- `app-debug.apk`: debuggable, module diagnostics enabled.
+- `app-release.apk`: R8 optimized, resource shrunk, non-debuggable, module diagnostics removed.
+- `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
 
-## License
-Apache License 2.0.
+For a durable user-release certificate set repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD`; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Without credentials the release build type still has all optimizations, but uses the runner's **test certificate**. BUILD.txt records this. Test certificates can change between runs and are unsuitable for a stable public release/update identity. No key is committed or uploaded. PR builds use test signing.
 
-**Attribution Requirement:**
-As per the [NOTICE](NOTICE) file, any project that incorporates this specific `stepX` optimization must provide clear acknowledgement of this project as the original source of the tweak.
+## Source rollback
+Pre-work main: `68fd7d47cc6b466690874bab1057e2eb59815e75`.
+Use `git revert <commit>` then a normal push for a history-preserving rollback. Stage 2 is confined to its branch and can be discarded without modifying main.
+
+## Attribution and license
+The original stepX optimization is from Samsung QS Lag Fix / OneUI-QSlagfix, originally targeting UN1CA 3. See [NOTICE](NOTICE) and [LICENSE](LICENSE) (Apache License 2.0).

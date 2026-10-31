@@ -24,10 +24,7 @@ Thumbs.db
 
 # Gradle and Wrapper
 .gradle/
-gradlew
-gradlew.bat
-gradle/wrapper/gradle-wrapper.properties
-gradle/wrapper/gradle-wrapper.jar
+# Commit the Gradle wrapper for reproducible builds.
 
 # Log files
 *.log
@@ -36,3 +33,7 @@ gradle/wrapper/gradle-wrapper.jar
 *.jks
 *.keystore
 *.p12
+
+# Locally packaged APKs and Python cache
+artifacts/
+__pycache__/
