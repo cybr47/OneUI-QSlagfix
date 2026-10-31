@@ -24,6 +24,13 @@ if [[ -n "${KEYSTORE_BASE64:-}" ]]; then
   signing="repository release key"
 else
   # Installable optimized test build; a generated debug certificate is not a release identity.
+  # AGP/SDK revisions can put their own debug keystore elsewhere; create ours when absent.
+  if [[ ! -f "$HOME/.android/debug.keystore" ]]; then
+    mkdir -p "$HOME/.android"
+    keytool -genkeypair -noprompt -keystore "$HOME/.android/debug.keystore" \
+      -alias androiddebugkey -storepass android -keypass android -keyalg RSA \
+      -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+  fi
   "$build_tools/apksigner" sign --ks "$HOME/.android/debug.keystore" \
     --ks-key-alias androiddebugkey --ks-pass pass:android --key-pass pass:android \
     --out artifacts/app-release.apk "$release_input"
