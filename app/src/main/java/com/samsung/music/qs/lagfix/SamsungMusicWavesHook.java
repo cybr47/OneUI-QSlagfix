@@ -28,6 +28,7 @@ public final class SamsungMusicWavesHook extends XposedModule {
         ClassLoader loader = param.getClassLoader();
         installLegacyWave(loader);
         installColorfulWave(loader);
+        NoSwipePanelHooks.install(this, loader);
     }
 
     private void installLegacyWave(ClassLoader loader) {

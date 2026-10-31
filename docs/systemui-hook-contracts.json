@@ -1,0 +1,171 @@
+{
+  "apk_sha256": "81a9e975a9a88a92a94f855c1c4a69dc68dcff28b5e28adfac5adc8ebebc68b4",
+  "classes": {
+    "Lcom/android/systemui/media/audiovisseekbar/renderer/track/auto/MultiWaveAreaTrackRenderer;": {
+      "fields": {
+        "stepX": "I"
+      },
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(Landroid/view/View; Lcom/android/systemui/media/audiovisseekbar/config/AudioVisSeekBarConfig;)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/media/colorfulwave/renderer/MultiWaveAreaTrackRenderer$WaveStyle;": {
+      "fields": {
+        "stepX": "I"
+      },
+      "methods": [
+        {
+          "name": "<init>",
+          "descriptor": "(I I I Landroid/graphics/PorterDuff$Mode; F F F F F F F I)V"
+        },
+        {
+          "name": "<init>",
+          "descriptor": "(I I I Landroid/graphics/PorterDuff$Mode; F F F F F F F I I Lkotlin/jvm/internal/DefaultConstructorMarker;)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/media/colorfulwave/renderer/MultiWaveAreaTrackRenderer;": {
+      "fields": {
+        "waveStyles": "Ljava/util/List;"
+      },
+      "methods": [
+        {
+          "name": "setWaveStyles",
+          "descriptor": "(Ljava/util/List;)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/NotificationShadeWindowView;": {
+      "fields": {
+        "mInteractionEventHandler": "Lcom/android/systemui/shade/NotificationShadeWindowViewController$1;"
+      },
+      "methods": [
+        {
+          "name": "dispatchTouchEvent",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        },
+        {
+          "name": "onConfigurationChanged",
+          "descriptor": "(Landroid/content/res/Configuration;)V"
+        },
+        {
+          "name": "onDetachedFromWindow",
+          "descriptor": "()V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/NotificationShadeWindowViewController$1;": {
+      "fields": {
+        "this$0": "Lcom/android/systemui/shade/NotificationShadeWindowViewController;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/shade/NotificationShadeWindowViewController;": {
+      "fields": {
+        "mNotificationStackScrollLayoutController": "Lcom/android/systemui/statusbar/notification/stack/NotificationStackScrollLayoutController;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/statusbar/notification/stack/NotificationStackScrollLayoutController;": {
+      "fields": {
+        "mPanelSplitHelper": "Lcom/android/systemui/shade/SecPanelSplitHelper;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/shade/SecPanelSplitHelper;": {
+      "fields": {
+        "enabled": "Z",
+        "panelExpanded": "Z",
+        "currentState": "I",
+        "stateOnDown": "I",
+        "stateToChange": "I",
+        "panelSlideEventHandler": "Lcom/android/systemui/shade/PanelSlideEventHandler;",
+        "panelRootView": "Landroid/view/View;",
+        "isQsDisabled": "Z",
+        "isShadeDisabled": "Z",
+        "secQsUiDisplayModeInteractor": "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;",
+        "onceOverSlide": "Z",
+        "overSlideAmount": "F"
+      },
+      "methods": [
+        {
+          "name": "onIntercept",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        },
+        {
+          "name": "setDraggedFraction",
+          "descriptor": "(F)V"
+        },
+        {
+          "name": "slide",
+          "descriptor": "(F Lcom/android/systemui/shade/PanelSlideEventHandler$Direction; Z)V"
+        },
+        {
+          "name": "slide$1",
+          "descriptor": "(I)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/PanelSlideEventHandler;": {
+      "fields": {
+        "sliderAnimator": "Landroid/animation/ValueAnimator;",
+        "tracking": "Z",
+        "panelSliderIntercepted": "Z",
+        "slidingInitialized": "Z",
+        "activePointerId": "I",
+        "fullyExpandedOnDown": "Z",
+        "velocityTracker": "Landroid/view/VelocityTracker;",
+        "direction": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
+        "touchSlop": "I",
+        "shadeHeaderController$delegate": "Lkotlin/Lazy;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/shade/ShadeHeaderController;": {
+      "fields": {
+        "header": "Landroidx/constraintlayout/motion/widget/MotionLayout;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/qs/animator/QsAnimatorState;": {
+      "fields": {
+        "state": "I",
+        "isSliding": "Z",
+        "isDetailOpening": "Z",
+        "isDetailShowing": "Z",
+        "isDetailClosing": "Z",
+        "isCustomizerShowing": "Z"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "isPopOverEnabled",
+          "descriptor": "()Z"
+        }
+      ]
+    },
+    "Lkotlin/Lazy;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "getValue",
+          "descriptor": "()Ljava/lang/Object;"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;": {
+      "fields": {
+        "UNDECIDED": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
+        "LEFT": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
+        "RIGHT": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;"
+      },
+      "methods": []
+    }
+  }
+}

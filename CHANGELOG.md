@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.0-no-swipe — no-swipe-panel-switch — 2026-10-31
+- Keep closed-panel left/right/reversed routing; disable horizontal panel switches while open.
+- Reuse the existing native header swipe area across its full width for unlimited Notifications/QS downward toggles; preserve upward close handling.
+- Apply Samsung terminal states immediately, cancel previous panel animation on the UI thread and consume each committed gesture tail to prevent double toggles or collapse.
+- Add classifier/state regression tests, checked APK contracts and an explicit on-device validation/assumptions list.
+
 ## 2.0.0-oneui9 — main — 2026-10-31
 - Verify the legacy wave constructor/stepX patch against the supplied One UI 9 Indian-ROM SystemUI 17 APK; retain its sampling optimization.
 - Cover the additional colourful-wave renderer with effective stepX=8 (draw clamps to 1..8) and preserve the fix across mutable style updates.

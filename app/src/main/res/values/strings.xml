@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">One UI QS Lag Fix</string>
-    <string name="xposed_description">Optimizes Quick Settings performance by reducing the rendering resolution of the music progress wave animation.</string>
+    <string name="app_name">One UI QS Lag Fix (no swipe)</string>
+    <string name="xposed_description">Optimizes media waves and replaces horizontal panel switches with repeated status-bar downward toggles.</string>
 </resources>

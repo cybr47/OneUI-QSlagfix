@@ -11,8 +11,8 @@ android {
         applicationId = "com.samsung.music.qs.lagfix"
         minSdk = 31
         targetSdk = 36
-        versionCode = 2
-        versionName = "2.0.0-oneui9"
+        versionCode = 3
+        versionName = "2.1.0-no-swipe"
     }
 
     buildTypes {
@@ -38,4 +38,5 @@ android {
 
 dependencies {
     compileOnly(libs.xposed.api)
+    testImplementation("junit:junit:4.13.2")
 }
