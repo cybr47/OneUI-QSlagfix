@@ -38,7 +38,10 @@ for index, argument in enumerate(sys.argv[1:]):
         if index == 1:
             for dex in dexes:
                 for message in [b"Legacy wave sampling installed", b"Colorful renderer unavailable",
-                                b"Colorful wave sampling installed", b"Panel gesture hooks installed"]:
+                                b"Colorful wave sampling installed", b"Panel gesture hooks installed",
+                                b"Module loaded: process=", b"SystemUI package loaded:",
+                                b"SystemUI package ready:", b"Native panel snapshot:",
+                                b"First native panel interception:", b"First native panel slide:"]:
                     assert message not in dex, "release contains module diagnostic strings"
     sdk = os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"]
     actual = subprocess.check_output([str(Path(sdk) / "cmdline-tools/latest/bin/apkanalyzer"),

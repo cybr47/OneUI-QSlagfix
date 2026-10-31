@@ -17,6 +17,19 @@ public final class SamsungMusicWavesHook extends XposedModule {
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
         targetProcess = "com.android.systemui".equals(param.getProcessName());
+        if (BuildConfig.DEBUG) {
+            debug("Module loaded: process=" + param.getProcessName()
+                    + "; target=" + targetProcess + "; version=" + BuildConfig.VERSION_NAME
+                    + "; framework=" + getFrameworkName() + " " + getFrameworkVersion()
+                    + "; api=" + getApiVersion(), null);
+        }
+    }
+
+    @Override
+    public void onPackageLoaded(PackageLoadedParam param) {
+        if (BuildConfig.DEBUG && "com.android.systemui".equals(param.getPackageName())) {
+            debug("SystemUI package loaded: target=" + targetProcess, null);
+        }
     }
 
     @Override
@@ -25,6 +38,7 @@ public final class SamsungMusicWavesHook extends XposedModule {
             return;
         }
         installed = true;
+        if (BuildConfig.DEBUG) debug("SystemUI package ready: installing hooks", null);
         ClassLoader loader = param.getClassLoader();
         installLegacyWave(loader);
         installColorfulWave(loader);
@@ -103,6 +117,6 @@ public final class SamsungMusicWavesHook extends XposedModule {
     }
 
     void debug(String message, Throwable error) {
-        if (BuildConfig.DEBUG) log(Log.DEBUG, "OneUI-QSlagfix", message, error);
+        if (BuildConfig.DEBUG) log(Log.INFO, "OneUI-QSlagfix", message, error);
     }
 }

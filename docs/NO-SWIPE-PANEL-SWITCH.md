@@ -57,3 +57,15 @@ On the supplied phone verify:
 Disable the module and reboot for stock behavior. Install the main APK and reboot to retain wave sampling only; a lower versionCode or different signing certificate may require uninstalling the experimental APK first.
 
 All gesture changes are in this branch's commit. Revert that commit for source rollback; main remains unchanged. See [CHANGELOG](../CHANGELOG.md) and [APK evidence](ONEUI9-ANALYSIS.md).
+
+## Diagnostic build 2.1.1
+
+This build investigates the report that the enabled module leaves panel behavior unchanged; it does not claim a gesture fix. Install app-debug.apk, restart SystemUI, then immediately try one horizontal panel switch and one downward header swipe. Export the LSPosed logs with the framework version header included.
+
+The debug APK logs at INFO priority using the OneUI-QSlagfix tag:
+- Module process, module/framework versions and package-loaded/package-ready lifecycle events.
+- Successful hook registration or its exception.
+- At most eight initial root DOWN events, including helper presence, enabled/expanded flags, native panel/status states, pop-over/detail policies, root attachment and header membership.
+- The first native interception and slide calls.
+
+There are no continuous frame logs or timers. All of these diagnostics are removed from app-release.apk and checked after R8. Activation/scope/restart alone cannot establish successful hook registration or which native guard was rejected; the phone logs are required to distinguish those cases.

@@ -98,6 +98,26 @@ final class NativePanels {
                 && root != null && root.isAttachedToWindow();
     }
 
+    String debugState(Object helper) {
+        if (helper == null) return "helper=null";
+        try {
+            View root = (View) panelRoot.get(helper);
+            return "helper=present; enabled=" + enabled.getBoolean(helper)
+                    + "; expanded=" + expanded.getBoolean(helper)
+                    + "; state=" + current.getInt(helper)
+                    + "; status=" + status.getInt(null)
+                    + "; popOver=" + popOver.invoke(mode.get(helper))
+                    + "; qsDisabled=" + qsDisabled.getBoolean(helper)
+                    + "; shadeDisabled=" + shadeDisabled.getBoolean(helper)
+                    + "; detailOrCustomizer=" + blocked()
+                    + "; panelRoot=" + (root == null ? "null"
+                            : root.getWidth() + "x" + root.getHeight()
+                                    + ",attached=" + root.isAttachedToWindow());
+        } catch (Throwable error) {
+            return "snapshot failed: " + error;
+        }
+    }
+
     private boolean blocked() throws IllegalAccessException {
         return detailOpening.getBoolean(null) || detailShowing.getBoolean(null)
                 || detailClosing.getBoolean(null) || customizing.getBoolean(null);

@@ -18,6 +18,9 @@ final class NoSwipePanelHooks {
     private final WeakHashMap<View, Gesture> gestures = new WeakHashMap<>();
     private boolean replaying;
     private volatile boolean failed;
+    private int debugDownCount;
+    private boolean debugInterceptSeen;
+    private boolean debugSlideSeen;
 
     private static final class Gesture {
         final float x, y;
@@ -56,11 +59,21 @@ final class NoSwipePanelHooks {
                     .intercept(hooks::dispatch));
             handles.add(module.hook(hooks.panels.intercept).setId("disable-native-panel-swipe")
                     .intercept(chain -> {
+                        if (BuildConfig.DEBUG && !hooks.debugInterceptSeen) {
+                            hooks.debugInterceptSeen = true;
+                            module.debug("First native panel interception: "
+                                    + hooks.panels.debugState(chain.getThisObject()), null);
+                        }
                         if (!hooks.failed && hooks.panels.available(chain.getThisObject())) return false;
                         return chain.proceed();
                     }));
             handles.add(module.hook(hooks.panels.slide).setId("disable-horizontal-panel-slide")
                     .intercept(chain -> {
+                        if (BuildConfig.DEBUG && !hooks.debugSlideSeen) {
+                            hooks.debugSlideSeen = true;
+                            module.debug("First native panel slide: direction=" + chain.getArg(1)
+                                    + "; " + hooks.panels.debugState(chain.getThisObject()), null);
+                        }
                         if (!hooks.failed && hooks.panels.enabled(chain.getThisObject())) {
                             String direction = ((Enum<?>) chain.getArg(1)).name();
                             if ("LEFT".equals(direction) || "RIGHT".equals(direction)) return null;
@@ -97,6 +110,10 @@ final class NoSwipePanelHooks {
         if (action == MotionEvent.ACTION_DOWN) {
             clear(root); // Includes a lost UP/CANCEL from the previous stream.
             gesture = null;
+            if (BuildConfig.DEBUG && debugDownCount < 8) {
+                debugDownCount++;
+                debugDown(root, event);
+            }
         }
         if (failed) {
             // Never forward an orphan MOVE/UP after a module-owned DOWN.
@@ -192,6 +209,24 @@ final class NoSwipePanelHooks {
     private void fail(Throwable error) {
         failed = true;
         module.debug("Panel gestures disabled after an unexpected contract failure", error);
+    }
+
+    private void debugDown(View root, MotionEvent event) {
+        try {
+            Object helper = panels.helper(root);
+            boolean available = panels.available(helper);
+            boolean candidate = available && root.isShown() && event.getPointerCount() == 1
+                    && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN);
+            String header = candidate
+                    ? Boolean.toString(panels.inHeader(helper, event, new int[2])) : "not evaluated";
+            module.debug("Native panel snapshot: touch=" + debugDownCount
+                    + "; source=" + event.getSource() + "; pointers=" + event.getPointerCount()
+                    + "; rootShown=" + root.isShown() + "; available=" + available
+                    + "; inHeader=" + header + "; failed=" + failed
+                    + "; " + panels.debugState(helper), null);
+        } catch (Throwable error) {
+            module.debug("Native panel snapshot failed", error);
+        }
     }
 
     private void clear(View root) {

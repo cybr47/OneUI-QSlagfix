@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.1.1-diagnostic — no-swipe-panel-switch — 2026-10-31
+- Investigate unchanged panel behavior with module/framework lifecycle and hook-registration diagnostics.
+- Log the first eight panel DOWN events and first native interception/slide only, in the debug APK, to expose rejected mode/root/header conditions.
+- Use INFO for debug diagnostics so ordinary framework logs can capture them; verify all diagnostic strings are removed from release.
+- No gesture behavior change is claimed without on-device logs.
+
 ## 2.1.0-no-swipe — no-swipe-panel-switch — 2026-10-31
 - Keep closed-panel left/right/reversed routing; disable horizontal panel switches while open.
 - Reuse the existing native header swipe area across its full width for unlimited Notifications/QS downward toggles; preserve upward close handling.

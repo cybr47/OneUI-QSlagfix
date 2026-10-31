@@ -11,8 +11,8 @@ android {
         applicationId = "com.samsung.music.qs.lagfix"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "2.1.0-no-swipe"
+        versionCode = 4
+        versionName = "2.1.1-diagnostic"
     }
 
     buildTypes {
