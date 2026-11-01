@@ -5,6 +5,7 @@ import android.graphics.Rect;
 import android.view.MotionEvent;
 import android.view.View;
 import java.lang.reflect.Field;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Method;
 import java.util.WeakHashMap;
 
@@ -23,14 +24,34 @@ final class NativePanels {
     private final Method lazyValue, popOver;
     private final Object undecided, down;
     private final WeakHashMap<View, HeaderArea> headerAreas = new WeakHashMap<>();
+    // Touch-down hit-testing runs on the main thread only, so these scratch objects are reused
+    // instead of being allocated for every touch.
+    private final Rect visibleBounds = new Rect();
+    private final int[] location = new int[2];
+    private WeakReference<Object> headerOwner;
+    private WeakReference<View> headerView;
     private boolean headerResourcesResolved;
     private int dateButtonsId, buttonsHeightId, dateBottomPaddingId;
 
-    private static final class HeaderArea {
-        final int width, height;
-        final float bottom;
+    /** Remembers a located view so the shade tree is not searched again on every touch-down. */
+    private static final class Lookup {
+        private WeakReference<View> ref;
 
-        HeaderArea(View panel, float bottom) {
+        View get(View window, int id, String tag) {
+            View view = ref == null ? null : ref.get();
+            if (view != null && view.isAttachedToWindow()) return view;
+            view = id != 0 ? window.findViewById(id) : tag != null ? window.findViewWithTag(tag) : null;
+            ref = view == null ? null : new WeakReference<>(view);
+            return view;
+        }
+    }
+
+    private static final class HeaderArea {
+        final Lookup buttons = new Lookup(), clock = new Lookup(), date = new Lookup();
+        int width, height;
+        float bottom;
+
+        void update(View panel, float bottom) {
             width = panel.getWidth();
             height = panel.getHeight();
             this.bottom = bottom;
@@ -123,16 +144,16 @@ final class NativePanels {
 
     InitialYGate originGate(Object nativeHandler) throws ReflectiveOperationException {
         if (intercepted.getBoolean(nativeHandler)) return null;
-        View statusHeader = (View) header.get(lazyValue.invoke(headerLazy.get(nativeHandler)));
+        View statusHeader = statusHeader(nativeHandler);
         if (initialY.getFloat(nativeHandler) < statusHeader.getMeasuredHeight()) return null;
         return new InitialYGate(initialY, nativeHandler);
     }
 
-    boolean inHeader(Object helper, MotionEvent event, int[] location) throws ReflectiveOperationException {
+    boolean inHeader(Object helper, MotionEvent event) throws ReflectiveOperationException {
         View area = (View) panelRoot.get(helper);
         if (area == null) return false;
         Object h = handler.get(helper);
-        View existingHeader = (View) header.get(lazyValue.invoke(headerLazy.get(h)));
+        View existingHeader = statusHeader(h);
         area.getLocationOnScreen(location);
         int panelTop = location[1];
         float x = event.getRawX() - location[0];
@@ -141,39 +162,40 @@ final class NativePanels {
 
         View window = area.getRootView();
         float bottom = existingHeader.getMeasuredHeight();
+        HeaderArea known = headerAreas.get(window);
         if (current.getInt(helper) == TRANSITION) {
             // Moving headers must not temporarily turn the notification/tile body into a swipe area.
-            HeaderArea previous = headerAreas.get(window);
-            if (previous != null && previous.width == area.getWidth() && previous.height == area.getHeight()) {
-                bottom = Math.max(bottom, previous.bottom);
+            if (known != null && known.width == area.getWidth() && known.height == area.getHeight()) {
+                bottom = Math.max(bottom, known.bottom);
             }
         } else {
-            bottom = Math.max(bottom, dateRowBottom(window, area.getResources(), panelTop, location));
+            if (known == null) headerAreas.put(window, known = new HeaderArea());
+            bottom = Math.max(bottom, dateRowBottom(known, window, area.getResources(), panelTop));
             bottom = Math.min(bottom, area.getHeight());
-            headerAreas.put(window, new HeaderArea(area, bottom));
+            known.update(area, bottom);
         }
         return y < bottom;
     }
 
-    private float dateRowBottom(View window, Resources resources, int panelTop, int[] location) {
+    private float dateRowBottom(HeaderArea cache, View window, Resources resources, int panelTop) {
         if (!headerResourcesResolved) {
             dateButtonsId = resources.getIdentifier("quick_qs_date_buttons", "id", "com.android.systemui");
             buttonsHeightId = resources.getIdentifier("sec_qs_buttons_container_height", "dimen", "com.android.systemui");
             dateBottomPaddingId = resources.getIdentifier("date_text_bottom_padding", "dimen", "com.android.systemui");
             headerResourcesResolved = true;
         }
-        Rect visible = new Rect();
+        Rect visible = visibleBounds;
         float bottom = 0f;
         // The notification/legacy header exposes the whole clock/date/button row as a native view.
-        View dateButtons = dateButtonsId == 0 ? null : window.findViewById(dateButtonsId);
+        View dateButtons = dateButtonsId == 0 ? null : cache.buttons.get(window, dateButtonsId, null);
         if (visible(dateButtons, visible)) {
             dateButtons.getLocationOnScreen(location);
             bottom = location[1] + dateButtons.getHeight() - panelTop;
         }
 
         // One UI 9's QS header is Compose; these two AndroidView tags are set by Samsung itself.
-        View clock = window.findViewWithTag("compose_header_clock");
-        View date = window.findViewWithTag("compose_header_date");
+        View clock = cache.clock.get(window, 0, "compose_header_clock");
+        View date = cache.date.get(window, 0, "compose_header_date");
         boolean clockVisible = visible(clock, visible);
         boolean dateVisible = visible(date, visible);
         float dateBottom = 0f;
@@ -202,6 +224,17 @@ final class NativePanels {
         return view != null && view.isShown() && view.isAttachedToWindow()
                 && view.getAlpha() > 0f && view.getWidth() > 0 && view.getHeight() > 0
                 && view.getGlobalVisibleRect(bounds);
+    }
+
+    /** The header view is resolved reflectively once and reused while it stays attached. */
+    private View statusHeader(Object nativeHandler) throws ReflectiveOperationException {
+        View cached = headerView == null ? null : headerView.get();
+        if (cached != null && headerOwner != null && headerOwner.get() == nativeHandler
+                && cached.isAttachedToWindow()) return cached;
+        View resolved = (View) header.get(lazyValue.invoke(headerLazy.get(nativeHandler)));
+        headerOwner = new WeakReference<>(nativeHandler);
+        headerView = resolved == null ? null : new WeakReference<>(resolved);
+        return resolved;
     }
 
     void clearHeaderArea(View root) {

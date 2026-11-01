@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.3.2-lockscreen-perf — area-increase — 2026-11-01
+- No gesture, area or animation behavior changes. Touch-down hit-testing no longer searches the shade view tree on every touch: the date/button, clock and date views and Samsung's header view are remembered (weakly) and looked up again only if they detach.
+- Hit-testing reuses its Rect, location array and per-window area record instead of allocating them per touch.
+- Pre-slop MOVE handling checks Samsung's cheap `panelSliderIntercepted`/header-height state before the long reflective availability chain.
+- Not measured on a device; the work removed is per touch-down/pre-slop MOVE, never per animation frame.
+
 ## 2.3.1-lockscreen — area-increase — 2026-11-01
 - Enable the existing common-header drag/release adapter for SHADE_LOCKED (status 2), as well as SHADE (status 0), so it applies to split panels opened from the lockscreen.
 - Retain Samsung's native keyguard, panel-disabled, detail-screen and pop-over policies, plus the tested drag/reversal/release and button behavior.

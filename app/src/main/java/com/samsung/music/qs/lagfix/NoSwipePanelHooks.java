@@ -109,7 +109,7 @@ final class NoSwipePanelHooks {
         try {
             Object helper = panels.helper(handler);
             if (!panels.available(helper)) return;
-            boolean header = panels.inHeader(helper, event, new int[2]);
+            boolean header = panels.inHeader(helper, event);
             sessions.put(handler, new SwipeSession(panels.slop(handler), header));
             // Replace only the native left/right start-area decision, after native initialization.
             panels.setHeaderStart(handler, header);
@@ -135,8 +135,10 @@ final class NoSwipePanelHooks {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) sessions.remove(handler);
             SwipeSession session = sessions.get(handler);
             if (event.getActionMasked() == MotionEvent.ACTION_MOVE && session != null
-                    && session.allowHeaderGate() && panels.available(chain.getThisObject())) {
+                    && session.allowHeaderGate()) {
+                // Cheap native-state checks first; the long availability chain only when a gate is needed.
                 gate = panels.originGate(handler);
+                if (gate != null && !panels.available(chain.getThisObject())) gate = null;
             }
         } catch (ReflectiveOperationException | RuntimeException error) {
             fail(error);
