@@ -1,27 +1,25 @@
 package com.samsung.music.qs.lagfix;
 
-/** One decision per physical pointer stream; never stores which panel is visible. */
+/** Native vertical drags remain native; horizontal-first panel switches stay disabled for this stream. */
 final class SwipeSession {
-    enum Decision { WAIT, RELEASE, TOGGLE, CONSUME }
+    final boolean sharedHeader;
     private final float slop;
-    private Decision decision = Decision.WAIT;
+    private boolean horizontal;
 
-    SwipeSession(float slop) {
+    SwipeSession(float slop, boolean sharedHeader) {
         this.slop = slop;
+        this.sharedHeader = sharedHeader;
     }
 
-    Decision move(float dx, float dy) {
-        if (decision == Decision.TOGGLE || decision == Decision.CONSUME) return Decision.CONSUME;
-        if (decision == Decision.RELEASE) return Decision.RELEASE;
-        float x = Math.abs(dx);
-        float y = Math.abs(dy);
-        if (Math.max(x, y) <= slop) return Decision.WAIT;
-        if (y > x) {
-            decision = dy > 0 ? Decision.TOGGLE : Decision.RELEASE;
-        } else {
-            // Horizontal first: lock this stream, even if the finger later curves downward.
-            decision = Decision.CONSUME;
-        }
-        return decision;
+    boolean allowHeaderGate() {
+        return sharedHeader && !horizontal;
+    }
+
+    boolean blockDirection(float dx, float dy, boolean nativeDown) {
+        // Samsung locks an established DOWN drag, including reversal and diagonal finger movement.
+        if (nativeDown) return false;
+        if (horizontal) return true;
+        horizontal = Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy);
+        return horizontal;
     }
 }

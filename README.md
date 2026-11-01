@@ -5,7 +5,7 @@ SystemUI-only libxposed module targeting the supplied Samsung One UI 9 Indian-RO
 ## Branches
 - **main**: media-wave sampling only; Samsung's panel gestures.
 - **no-swipe-panel-switch**: separate gesture variant: horizontal panel switching disabled; repeated downward header swipes toggle panels. See [gesture behavior, assumptions and rollback](docs/NO-SWIPE-PANEL-SWITCH.md).
-- **area-increase**: the same gesture behavior, with the swipe area extended through the clock/date and QS edit/power/settings row. Button taps are forwarded to Samsung normally.
+- **area-increase**: Samsung's interactive drag-and-release panel switching across the full clock/date and QS button row. Hold, reverse or release the drag; ordinary button taps stay native. Horizontal panel switching is disabled.
 
 The original optimization reduces the legacy media progress wave's sampling resolution (stepX=10). One UI 9 also contains a colourful renderer whose per-style step is clamped to 1..8; this fork uses 8 and reapplies after style updates. This reduces sampling work. Smoothness and battery improvements have not been measured on-device.
 

@@ -42,6 +42,14 @@ Rechecked against the same APK checksum above:
 
 The area-increase hit-test reads those live views/resources only at touch-down. It does not hook Compose rendering or change the button click handlers. During a transition it uses the last settled hit-test boundary, rather than following the animated date row down the screen.
 
+## Native drag and release used by area-increase 2.3.0
+
+The same supplied APK was rechecked for the complete gesture path. `PanelSlideEventHandler.initiateSlide(MotionEvent)` initializes the real coordinates, pointer, tracker and `stateOnDown`, then derives `isInChangeSpotOnDown` from the native header height and the left/right divider. `SecPanelSplitHelper.onIntercept` independently checks the header height, and calls `slidePointerDeltas(MotionEvent)` before `updateDirection(float,float)` and its vertical eligibility check.
+
+The module widens the start flag and, only after native deltas have been calculated, temporarily adapts `initialY` for the two interception height checks. The real origin is restored on exit, including exceptions. `SecPanelSplitHelper.handleTouch` remains native: MOVE calls `slide` with the real finger delta; UP/CANCEL uses the native release/cancellation path and `createSlideAnimatorAndRun` with the real velocity and dragged distance. No module-owned animation or forced completion remains. See [current gesture behavior](NO-SWIPE-PANEL-SWITCH.md).
+
+The native interception caller is explicitly deoptimized to preserve its hooked callee calls against ART inlining, using the documented [libxposed API](https://github.com/libxposed/api). Live touch/render/release methods are not explicitly deoptimized.
+
 ## Framework API
 
 Uses `io.github.libxposed:api:102.0.0`, the latest release verified during this work. Modern no-argument XposedModule entry, onModuleLoaded/onPackageReady, interceptor chains, compileOnly dependency, META-INF metadata/scope, protective exception mode and R8 rules follow:

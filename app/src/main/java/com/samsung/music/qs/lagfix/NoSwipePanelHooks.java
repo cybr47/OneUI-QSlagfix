@@ -1,257 +1,202 @@
 package com.samsung.music.qs.lagfix;
 
 import android.os.Looper;
-import android.view.InputDevice;
 import android.view.MotionEvent;
 import android.view.View;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
 import io.github.libxposed.api.XposedInterface;
 
-/** Own only the existing open-shade header gesture. No view, timer or background thread. */
+/** Samsung receives the original touch stream, including button presses and drag/release/cancel. */
 final class NoSwipePanelHooks {
     private final SamsungMusicWavesHook module;
     private final NativePanels panels;
-    private final XposedInterface.Invoker<?, Method> replayDispatch;
-    private final WeakHashMap<View, Gesture> gestures = new WeakHashMap<>();
-    private boolean replaying;
+    private final WeakHashMap<Object, SwipeSession> sessions = new WeakHashMap<>();
+    private InitialYGate activeGate;
     private volatile boolean failed;
-    private boolean declinedLogged;
     private int debugDownCount;
-    private boolean debugInterceptSeen;
-    private boolean debugSlideSeen;
-
-    private static final class Gesture {
-        final float x, y;
-        final SwipeSession session;
-        MotionEvent down;
-        boolean cancelled;
-
-        Gesture(MotionEvent event, float slop) {
-            x = event.getRawX();
-            y = event.getRawY();
-            session = new SwipeSession(slop);
-            down = MotionEvent.obtain(event);
-        }
-
-        void recycle() {
-            if (down != null) {
-                down.recycle();
-                down = null;
-            }
-        }
-    }
 
     private NoSwipePanelHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
         this.module = module;
         panels = new NativePanels(loader);
-        replayDispatch = module.getInvoker(panels.dispatch);
     }
 
     static void install(SamsungMusicWavesHook module, ClassLoader loader) {
         List<XposedInterface.HookHandle> handles = new ArrayList<>();
         try {
             NoSwipePanelHooks hooks = new NoSwipePanelHooks(module, loader);
-            // Resolve every contract before installing, and roll back the whole group on failure.
-            handles.add(module.hook(hooks.panels.dispatch).setId("panel-status-bar-gesture")
-                    .intercept(hooks::dispatch));
-            handles.add(module.hook(hooks.panels.intercept).setId("disable-native-panel-swipe")
+            handles.add(module.hook(hooks.panels.initiate).setId("common-header-start")
                     .intercept(chain -> {
-                        if (BuildConfig.DEBUG && !hooks.debugInterceptSeen) {
-                            hooks.debugInterceptSeen = true;
-                            module.debug("First native panel interception: "
-                                    + hooks.panels.debugState(chain.getThisObject()), null);
+                        Object result = chain.proceed();
+                        if (!hooks.failed && mainThread()) {
+                            hooks.initialize(chain.getThisObject(), (MotionEvent) chain.getArg(0));
                         }
-                        if (!hooks.failed && hooks.panels.available(chain.getThisObject())) return false;
+                        return result;
+                    }));
+            handles.add(module.hook(hooks.panels.intercept).setId("native-header-interception")
+                    .intercept(hooks::intercept));
+            handles.add(module.hook(hooks.panels.pointerDeltas).setId("preserve-real-pointer-deltas")
+                    .intercept(chain -> {
+                        InitialYGate gate = hooks.activeGate;
+                        if (!mainThread() || gate == null || !gate.owns(chain.getThisObject())) return chain.proceed();
+                        // Even a repeated/nested delta read uses the real finger origin.
+                        hooks.restore(gate);
+                        Object result = chain.proceed();
+                        if (!hooks.failed) {
+                            try {
+                                gate.allowHeader();
+                            } catch (ReflectiveOperationException | RuntimeException error) {
+                                hooks.fail(error);
+                            }
+                        }
+                        return result;
+                    }));
+            handles.add(module.hook(hooks.panels.updateDirection).setId("disable-horizontal-panel-direction")
+                    .intercept(chain -> {
+                        if (!hooks.failed && mainThread()) {
+                            try {
+                                Object handler = chain.getThisObject();
+                                SwipeSession session = hooks.sessions.get(handler);
+                                if (session != null && session.blockDirection(
+                                        ((Number) chain.getArg(0)).floatValue(),
+                                        ((Number) chain.getArg(1)).floatValue(), hooks.panels.isDown(handler))
+                                        && hooks.panels.available(hooks.panels.helper(handler))) {
+                                    hooks.panels.blockHorizontal(handler);
+                                    return null;
+                                }
+                            } catch (ReflectiveOperationException | RuntimeException error) {
+                                hooks.fail(error);
+                            }
+                        }
                         return chain.proceed();
                     }));
-            handles.add(module.hook(hooks.panels.slide).setId("disable-horizontal-panel-slide")
+            handles.add(module.hook(hooks.panels.touch).setId("native-release-cleanup")
                     .intercept(chain -> {
-                        if (BuildConfig.DEBUG && !hooks.debugSlideSeen) {
-                            hooks.debugSlideSeen = true;
-                            module.debug("First native panel slide: direction=" + chain.getArg(1)
-                                    + "; " + hooks.panels.debugState(chain.getThisObject()), null);
+                        try {
+                            // Native MOVE follows the finger; native UP/CANCEL decides how to settle.
+                            return chain.proceed();
+                        } finally {
+                            if (terminal((MotionEvent) chain.getArg(0))) hooks.finish(chain.getThisObject());
                         }
-                        // Only horizontal slides are blocked. Samsung's vertical DOWN frames, which now
-                        // run every frame of the animated switch, pass straight through without any
-                        // reflective gating.
-                        String direction = ((Enum<?>) chain.getArg(1)).name();
-                        if (("LEFT".equals(direction) || "RIGHT".equals(direction))
-                                && !hooks.failed && hooks.panels.enabled(chain.getThisObject())) {
-                            return null;
-                        }
-                        return chain.proceed();
                     }));
             handles.add(module.hook(hooks.panels.rootDetached).setId("panel-gesture-detach")
                     .intercept(chain -> {
-                        hooks.clear((View) chain.getThisObject());
-                        hooks.panels.clearHeaderArea((View) chain.getThisObject());
+                        hooks.reset((View) chain.getThisObject());
                         return chain.proceed();
                     }));
             handles.add(module.hook(hooks.panels.rootConfig).setId("panel-gesture-configuration")
                     .intercept(chain -> {
-                        hooks.panels.clearHeaderArea((View) chain.getThisObject());
-                        Gesture gesture = hooks.gestures.get((View) chain.getThisObject());
-                        if (gesture != null) {
-                            gesture.recycle();
-                            gesture.cancelled = true;
-                        }
+                        hooks.reset((View) chain.getThisObject());
                         return chain.proceed();
                     }));
-            // Visible in release builds too: this is the line to look for in the LSPosed log.
-            module.note("Panel gesture hooks installed (animated status-bar panel switch)");
+            // This caller must execute its hooked initiation/delta/direction methods, even if ART
+            // previously inlined them. Do not deoptimize native touch, rendering or release animation.
+            if (!module.deoptimize(hooks.panels.intercept)) {
+                throw new IllegalStateException("Cannot deoptimize native panel interception");
+            }
+            module.note("Panel gesture hooks installed (native header drag/release)");
         } catch (Throwable error) {
             for (int i = handles.size() - 1; i >= 0; i--) handles.get(i).unhook();
             module.warn("Panel gesture hooks NOT installed; stock Samsung gestures are unchanged", error);
         }
     }
 
-    private Object dispatch(XposedInterface.Chain chain) throws Throwable {
-        if (replaying || Looper.myLooper() != Looper.getMainLooper()) return chain.proceed();
-        View root = (View) chain.getThisObject();
-        MotionEvent event = (MotionEvent) chain.getArg(0);
-        int action = event.getActionMasked();
-        Gesture gesture = gestures.get(root);
-        if (action == MotionEvent.ACTION_DOWN) {
-            clear(root); // Includes a lost UP/CANCEL from the previous stream.
-            gesture = null;
+    private void initialize(Object handler, MotionEvent event) {
+        sessions.remove(handler);
+        if (event.getActionMasked() != MotionEvent.ACTION_DOWN) return;
+        try {
+            Object helper = panels.helper(handler);
+            if (!panels.available(helper)) return;
+            boolean header = panels.inHeader(helper, event, new int[2]);
+            sessions.put(handler, new SwipeSession(panels.slop(handler), header));
+            // Replace only the native left/right start-area decision, after native initialization.
+            panels.setHeaderStart(handler, header);
             if (BuildConfig.DEBUG && debugDownCount < 8) {
                 debugDownCount++;
-                debugDown(root, event);
-            }
-        }
-        // Nothing of ours is in flight: MOVE/UP of a stream we never buffered belongs to Samsung, and
-        // there is no reason to walk the reflective helper chain for every touch event.
-        if (gesture == null && action != MotionEvent.ACTION_DOWN) return chain.proceed();
-        if (failed) {
-            // Never forward an orphan MOVE/UP after a module-owned DOWN.
-            if (gesture == null) return chain.proceed();
-            if (terminal(action)) clear(root);
-            return true;
-        }
-
-        Object helper;
-        boolean passthrough = false;
-        try {
-            helper = panels.helper(root);
-            if (action == MotionEvent.ACTION_DOWN) {
-                boolean candidate = event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
-                        && event.getPointerCount() == 1 && root.isShown() && panels.available(helper);
-                // Read-only: a tap or an upward swipe must never snap a running panel animation to its end.
-                if (candidate && panels.inHeader(helper, event, new int[2])
-                        && PanelSwitch.canToggle(panels.access(helper))) {
-                    gestures.put(root, new Gesture(event, panels.slop(helper)));
-                    // Buffer this DOWN, including over the date row and QS edit/power/settings buttons.
-                    // Taps replay DOWN/UP to Samsung; a swipe never clicks the button or enters the
-                    // native collapse/fling path. Upward streams also return to stock.
-                    return true;
-                }
-                passthrough = true;
-            } else if (gesture == null) {
-                passthrough = true;
-            } else {
-                if (gesture.cancelled || !panels.available(helper)) {
-                    gesture.recycle();
-                    gesture.cancelled = true;
-                    if (terminal(action)) clear(root);
-                    return true;
-                }
-                if (action == MotionEvent.ACTION_CANCEL || action == MotionEvent.ACTION_OUTSIDE) {
-                    clear(root);
-                    return true; // No native DOWN was dispatched for this stream.
-                }
+                module.debug("Native header start: sharedHeader=" + header, null);
             }
         } catch (ReflectiveOperationException | RuntimeException error) {
             fail(error);
-            if (gesture == null) return chain.proceed();
-            gesture.recycle();
-            if (terminal(action)) clear(root);
-            return true;
         }
-        // Do not catch exceptions from Samsung/the rest of the hook chain as module failures.
-        if (passthrough) return chain.proceed();
+    }
 
-        // Multi-pointer gestures before commitment belong to Samsung. Once committed, consume
-        // the tail so a second finger or direction reversal cannot toggle a second time.
-        SwipeSession.Decision decision;
-        if (event.getPointerCount() > 1 || action == MotionEvent.ACTION_POINTER_UP) {
-            decision = gesture.down != null
-                    ? SwipeSession.Decision.RELEASE : SwipeSession.Decision.CONSUME;
-        } else {
-            decision = gesture.session.move(event.getRawX() - gesture.x, event.getRawY() - gesture.y);
-        }
-        if (decision == SwipeSession.Decision.TOGGLE) {
-            gesture.recycle();
-            try {
-                if (!PanelSwitch.toggle(panels.access(helper)) && !declinedLogged) {
-                    // Samsung refused this one switch (state unchanged). That is not a broken contract,
-                    // so the feature stays on; the swipe is simply ignored. Logged once per process.
-                    declinedLogged = true;
-                    module.warn("Samsung declined a panel switch; that swipe was ignored", null);
-                }
-            } catch (ReflectiveOperationException | RuntimeException error) {
-                fail(error);
+    private Object intercept(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread()) return chain.proceed();
+        MotionEvent event = (MotionEvent) chain.getArg(0);
+        InitialYGate previous = activeGate;
+        boolean resumePrevious = previous != null && previous.isApplied();
+        if (resumePrevious) restore(previous);
+        Object handler = null;
+        InitialYGate gate = null;
+        try {
+            handler = panels.handler(chain.getThisObject());
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) sessions.remove(handler);
+            SwipeSession session = sessions.get(handler);
+            if (event.getActionMasked() == MotionEvent.ACTION_MOVE && session != null
+                    && session.allowHeaderGate() && panels.available(chain.getThisObject())) {
+                gate = panels.originGate(handler);
             }
-            if (terminal(action)) clear(root);
-            return true;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
         }
-        if (decision == SwipeSession.Decision.CONSUME) {
-            gesture.recycle();
-            if (terminal(action)) clear(root);
-            return true;
-        }
-        if (decision == SwipeSession.Decision.RELEASE || action == MotionEvent.ACTION_UP) {
-            MotionEvent down = gesture.down;
-            gesture.down = null;
-            gestures.remove(root);
-            if (down != null) {
-                replaying = true;
-                try {
-                    replayDispatch.invoke(root, down);
-                } finally {
-                    replaying = false;
-                    down.recycle();
-                }
-            }
-            // Stock receives the original DOWN followed by this MOVE/UP, preserving swipe-up close.
+        activeGate = gate;
+        try {
+            // Native onIntercept retains all expansion, keyguard, Compose and touch-slop checks.
             return chain.proceed();
+        } finally {
+            restore(gate);
+            activeGate = previous;
+            if (resumePrevious && !failed) {
+                try {
+                    previous.allowHeader();
+                } catch (ReflectiveOperationException | RuntimeException error) {
+                    fail(error);
+                }
+            }
+            if (terminal(event) && handler != null) sessions.remove(handler);
         }
-        return true;
+    }
+
+    private void finish(Object helper) {
+        try {
+            sessions.remove(panels.handler(helper));
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+        }
+    }
+
+    private void reset(View root) {
+        restore(activeGate);
+        activeGate = null;
+        sessions.clear();
+        panels.clearHeaderArea(root);
+    }
+
+    private void restore(InitialYGate gate) {
+        if (gate == null) return;
+        try {
+            gate.restore();
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+        }
     }
 
     private void fail(Throwable error) {
-        failed = true;
-        module.warn("Panel gestures disabled until SystemUI restarts: unexpected contract failure", error);
-    }
-
-    private void debugDown(View root, MotionEvent event) {
-        try {
-            Object helper = panels.helper(root);
-            boolean available = panels.available(helper);
-            boolean candidate = available && root.isShown() && event.getPointerCount() == 1
-                    && event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN);
-            String header = candidate
-                    ? Boolean.toString(panels.inHeader(helper, event, new int[2])) : "not evaluated";
-            module.debug("Native panel snapshot: touch=" + debugDownCount
-                    + "; source=" + event.getSource() + "; pointers=" + event.getPointerCount()
-                    + "; rootShown=" + root.isShown() + "; available=" + available
-                    + "; inHeader=" + header + "; failed=" + failed
-                    + "; " + panels.debugState(helper), null);
-        } catch (Throwable error) {
-            module.debug("Native panel snapshot failed", error);
+        if (!failed) {
+            failed = true;
+            sessions.clear();
+            module.warn("Panel gestures disabled until SystemUI restarts: unexpected contract failure", error);
         }
     }
 
-    private void clear(View root) {
-        Gesture old = gestures.remove(root);
-        if (old != null) old.recycle();
+    private static boolean mainThread() {
+        return Looper.myLooper() == Looper.getMainLooper();
     }
 
-    private static boolean terminal(int action) {
-        return action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL
-                || action == MotionEvent.ACTION_OUTSIDE;
+    private static boolean terminal(MotionEvent event) {
+        int action = event.getActionMasked();
+        return action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL;
     }
 }

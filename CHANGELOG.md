@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0-native-drag — area-increase — 2026-11-01
+- Replace the automatic switch trigger with Samsung's original touch interception and drag/release handling. Finger position drives the transition; Samsung decides whether to complete or return on release.
+- Widen the native start-area flag across the expanded clock/date/button row. Adapt the separate native header-height checks only during interception, after real pointer deltas have been calculated, and restore the real origin before touch/release handling.
+- Remove the module's forced fling velocity, animation launching, transition snapping and DOWN/UP replay. Buttons now receive the original touch stream; native parent interception cancels a button press when a drag takes over.
+- Keep horizontal panel switching disabled at native direction classification, while preserving an established DOWN drag when the finger reverses or moves diagonally.
+- Deoptimize only the native interception caller so its small hooked callees cannot be bypassed by ART inlining. Rendering, live drag and release animation methods are not explicitly deoptimized.
+- Retain the tested expanded area, media sampling, signing and release build settings. Add regression coverage for original-coordinate restoration and horizontal gesture policy; remove tests for the deleted automatic toggle reducer.
+
 ## 2.2.1-area-increase — area-increase — 2026-11-01
 - Extend the open-panel swipe area through the existing clock/date and QS edit/power/settings row, using Samsung's measured views and configured row height.
 - Preserve native button taps through the existing DOWN/UP replay; downward swipes over the buttons switch panels without clicking them.

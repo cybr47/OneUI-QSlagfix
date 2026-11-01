@@ -106,6 +106,10 @@
         {
           "name": "slide$1",
           "descriptor": "(I)V"
+        },
+        {
+          "name": "handleTouch",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
         }
       ]
     },
@@ -122,7 +126,10 @@
         "touchSlop": "I",
         "shadeHeaderController$delegate": "Lkotlin/Lazy;",
         "maxDragWidth": "F",
-        "flingAnimationUtils": "Lcom/android/wm/shell/animation/FlingAnimationUtils;"
+        "flingAnimationUtils": "Lcom/android/wm/shell/animation/FlingAnimationUtils;",
+        "initialY": "F",
+        "isInChangeSpotOnDown": "Z",
+        "secPanelSplitHelper": "Lcom/android/systemui/shade/SecPanelSplitHelper;"
       },
       "methods": [
         {
@@ -132,6 +139,18 @@
         {
           "name": "updateResource",
           "descriptor": "()V"
+        },
+        {
+          "name": "initiateSlide",
+          "descriptor": "(Landroid/view/MotionEvent;)V"
+        },
+        {
+          "name": "slidePointerDeltas",
+          "descriptor": "(Landroid/view/MotionEvent;)Lkotlin/Pair;"
+        },
+        {
+          "name": "updateDirection",
+          "descriptor": "(FF)V"
         }
       ]
     },
