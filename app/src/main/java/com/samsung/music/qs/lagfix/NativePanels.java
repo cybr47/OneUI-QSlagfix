@@ -1,5 +1,7 @@
 package com.samsung.music.qs.lagfix;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -18,7 +20,16 @@ final class NativePanels {
     private final Field velocity, direction, touchSlop, headerLazy, header;
     private final Field status, sliding, detailOpening, detailShowing, detailClosing, customizing;
     private final Method lazyValue, popOver, fraction, switchState;
-    private final Object undecided;
+    private final Method createSlide, updateResource;
+    private final Field maxDrag, flingUtils, minFlingVelocity;
+    private final Object undecided, down;
+
+    /**
+     * Release velocity (px/s) handed to Samsung's own slide animator. It only needs to exceed the
+     * animator's minimum fling velocity so the switch always commits; Samsung's FlingAnimationUtils
+     * then derives the duration and interpolator exactly as for a real finger fling.
+     */
+    private static final float COMMIT_VELOCITY_PX_PER_SECOND = 4000f;
 
     NativePanels(ClassLoader loader) throws ReflectiveOperationException {
         rootType = Class.forName("com.android.systemui.shade.NotificationShadeWindowView", false, loader);
@@ -60,6 +71,14 @@ final class NativePanels {
         velocity = field(handlerType, "velocityTracker");
         direction = field(handlerType, "direction");
         touchSlop = field(handlerType, "touchSlop");
+        // Samsung's own finger-release animator: createSlideAnimatorAndRun(velocity, draggedDistance).
+        createSlide = method(handlerType, "createSlideAnimatorAndRun", float.class, float.class);
+        updateResource = method(handlerType, "updateResource");
+        maxDrag = field(handlerType, "maxDragWidth");
+        Class<?> flingType = Class.forName("com.android.wm.shell.animation.FlingAnimationUtils", false, loader);
+        flingUtils = field(handlerType, "flingAnimationUtils");
+        if (flingUtils.getType() != flingType) throw new NoSuchFieldException("flingAnimationUtils type");
+        minFlingVelocity = field(flingType, "mMinVelocityPxPerSecond");
         headerLazy = field(handlerType, "shadeHeaderController$delegate");
         Class<?> lazy = Class.forName("kotlin.Lazy", false, loader);
         lazyValue = method(lazy, "getValue");
@@ -72,6 +91,7 @@ final class NativePanels {
         detailClosing = field(animatorState, "isDetailClosing");
         customizing = field(animatorState, "isCustomizerShowing");
         undecided = field(directionType, "UNDECIDED").get(null);
+        down = field(directionType, "DOWN").get(null);
     }
 
     Object helper(Object root) throws IllegalAccessException {
@@ -151,15 +171,17 @@ final class NativePanels {
             @Override public void finish(int destination) throws ReflectiveOperationException {
                 finishState(helper, destination);
             }
+            @Override public void animate(int destination) throws ReflectiveOperationException {
+                animateState(helper, destination);
+            }
         };
     }
 
-    private void finishState(Object helper, int destination) throws ReflectiveOperationException {
-        if (!PanelSwitch.terminal(destination)) throw new IllegalArgumentException("non-panel state");
-        Object h = handler.get(helper);
-        int source = current.getInt(helper);
-        if (!PanelSwitch.terminal(source)) source = start.getInt(helper);
-        if (!PanelSwitch.terminal(source)) source = destination ^ 1;
+    /**
+     * Cancels any running native slide animator and clears every finger-tracking flag, leaving the
+     * handler as it is after a finished gesture. Must run on the UI thread.
+     */
+    private void quiesce(Object helper, Object h) throws ReflectiveOperationException {
         ValueAnimator animator = (ValueAnimator) sliderAnimator.get(h);
         if (animator != null) animator.cancel(); // Native listeners clear their animator and isSliding.
         sliderAnimator.set(h, null);
@@ -168,14 +190,92 @@ final class NativePanels {
         initialized.setBoolean(h, false);
         fullyOnDown.setBoolean(h, false);
         pointer.setInt(h, -1);
-        direction.set(h, undecided);
         ((VelocityTracker) velocity.get(h)).clear();
-        start.setInt(helper, source);
-        target.setInt(helper, destination);
         onceOver.setBoolean(helper, false);
         overSlide.setFloat(helper, 0f);
-        fraction.invoke(helper, 0f);
         sliding.setBoolean(null, false);
+    }
+
+    /**
+     * Starts Samsung's own animated panel switch: the leaving panel fades out towards the bottom and the
+     * arriving panel fades in from the top. This is exactly what a finger-released vertical pull does:
+     * Samsung's {@code createSlideAnimatorAndRun} drives {@code SecPanelSplitHelper.slide(value, DOWN, ..)}
+     * on every frame, which feeds {@code SecQSImplAnimatorManager.slide(..)} and finally commits the
+     * terminal state itself. Nothing here draws, schedules or animates anything.
+     */
+    private void animateState(Object helper, int destination) throws ReflectiveOperationException {
+        if (!PanelSwitch.terminal(destination)) throw new IllegalArgumentException("non-panel state");
+        Object h = handler.get(helper);
+        int source = current.getInt(helper);
+        if (!PanelSwitch.terminal(source)) source = destination ^ 1; // settle() makes this unreachable.
+        quiesce(helper, h);
+        // The same fields Samsung holds at the moment a downward header pull is released.
+        start.setInt(helper, source);
+        target.setInt(helper, destination);
+        direction.set(h, down);
+        if (maxDrag.getFloat(h) <= 0f) updateResource.invoke(h); // Normally set in the constructor.
+        float minVelocity = minFlingVelocity.getFloat(flingUtils.get(h));
+        float commitVelocity = Math.max(COMMIT_VELOCITY_PX_PER_SECOND, minVelocity * 4f);
+        // Start just past the touch slop, where a real pull would be classified as a downward slide.
+        float distance = Math.max(touchSlop.getInt(h), 1);
+        createSlide.invoke(h, commitVelocity, distance);
+        // ValueAnimator.start() delivers the first frame synchronously, so Samsung's slide() has already
+        // either moved the panels into TRANSITION, committed the destination (animations off), or refused.
+        int after = current.getInt(helper);
+        ValueAnimator animator = (ValueAnimator) sliderAnimator.get(h);
+        if (after != PanelSwitch.TRANSITION && after != destination) {
+            // Refused (disabled panel, detail screen...): leave nothing running and the state untouched.
+            if (animator != null) animator.cancel();
+            sliderAnimator.set(h, null);
+            direction.set(h, undecided);
+            sliding.setBoolean(null, false);
+            return;
+        }
+        if (animator != null) {
+            animator.addListener(new SettleListener(helper, destination));
+        } else if (after == PanelSwitch.TRANSITION) {
+            // The animation already ended without committing: finish the switch ourselves.
+            switchState.invoke(helper, destination);
+        }
+    }
+
+    /** Guards against a stuck half-transition if Samsung's final frame did not commit the state. */
+    private final class SettleListener extends AnimatorListenerAdapter {
+        private final Object helper;
+        private final int destination;
+        private boolean cancelled;
+
+        SettleListener(Object helper, int destination) {
+            this.helper = helper;
+            this.destination = destination;
+        }
+
+        @Override public void onAnimationCancel(Animator animation) {
+            cancelled = true;
+        }
+
+        @Override public void onAnimationEnd(Animator animation) {
+            if (cancelled) return;
+            try {
+                if (current.getInt(helper) == PanelSwitch.TRANSITION) switchState.invoke(helper, destination);
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // The next swipe settles any remaining transition through PanelSwitch.settle().
+            }
+        }
+    }
+
+    /** Instantly completes a switch with no animation; used only to settle an in-flight transition. */
+    private void finishState(Object helper, int destination) throws ReflectiveOperationException {
+        if (!PanelSwitch.terminal(destination)) throw new IllegalArgumentException("non-panel state");
+        Object h = handler.get(helper);
+        int source = current.getInt(helper);
+        if (!PanelSwitch.terminal(source)) source = start.getInt(helper);
+        if (!PanelSwitch.terminal(source)) source = destination ^ 1;
+        quiesce(helper, h);
+        direction.set(h, undecided);
+        start.setInt(helper, source);
+        target.setInt(helper, destination);
+        fraction.invoke(helper, 0f);
         // Samsung owns listener notification, repository state, visibility and terminal Compose state.
         switchState.invoke(helper, destination);
         int actual = current.getInt(helper);

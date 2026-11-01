@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify actual APK entry, scope, API packaging and release diagnostic removal."""
+"""Verify actual APK entry, scope, API packaging, release status log lines and the debuggable flag."""
 import struct
 import subprocess
 import sys
@@ -32,17 +32,16 @@ for index, argument in enumerate(sys.argv[1:]):
         dexes = [apk.read(name) for name in apk.namelist() if name.startswith("classes") and name.endswith(".dex")]
         classes = set().union(*(defined_classes(dex) for dex in dexes))
         for entry in entries:
-            assert "L" + entry.replace(".", "/") + ";" in classes, "R8 removed module entry"
+            assert "L" + entry.replace(".", "/") + ";" in classes, "module entry class missing from the APK"
         assert not any(name.startswith("Lio/github/libxposed/") for name in classes), "compileOnly API bundled"
         assert "assets/xposed_init" not in apk.namelist(), "legacy entry remains"
         if index == 1:
-            for dex in dexes:
-                for message in [b"Legacy wave sampling installed", b"Colorful renderer unavailable",
-                                b"Colorful wave sampling installed", b"Panel gesture hooks installed",
-                                b"Module loaded: process=", b"SystemUI package loaded:",
-                                b"SystemUI package ready:", b"Native panel snapshot:",
-                                b"First native panel interception:", b"First native panel slide:"]:
-                    assert message not in dex, "release contains module diagnostic strings"
+            # Release is intentionally not minified (see app/build.gradle.kts) and writes one short status
+            # line per SystemUI start, so the LSPosed log proves the module loaded and its hooks installed.
+            blob = b"".join(dexes)
+            for message in [b"Loaded in SystemUI, module version", b"Legacy wave sampling installed",
+                            b"Colorful wave sampling installed", b"Panel gesture hooks installed"]:
+                assert message in blob, "release lacks its status log line: " + message.decode()
     sdk = os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"]
     actual = subprocess.check_output([str(Path(sdk) / "cmdline-tools/latest/bin/apkanalyzer"),
                                       "manifest", "debuggable", str(path)], text=True).strip()

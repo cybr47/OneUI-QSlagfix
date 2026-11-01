@@ -11,20 +11,23 @@ android {
         applicationId = "com.samsung.music.qs.lagfix"
         minSdk = 31
         targetSdk = 36
-        versionCode = 4
-        versionName = "2.1.1-diagnostic"
+        versionCode = 5
+        versionName = "2.2.0-animated-switch"
     }
 
     buildTypes {
         release {
             isDebuggable = false
             isJniDebuggable = false
-            isMinifyEnabled = true
-            isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
+            // R8 is intentionally OFF. The only BuildConfig.DEBUG uses are log statements, so R8 (shrink,
+            // obfuscate, optimize) was the one build step that changed the module's executed code between
+            // the debug APK, where the panel gesture worked, and the release APK, where it did not.
+            // The root cause inside R8 was not isolated (no Android build tooling was reachable when
+            // this was fixed), so release now compiles through the same D8 path as debug instead.
+            // The module is a few kilobytes: minifying saves nothing. Release stays non-debuggable and
+            // signed with the same key; only the verbose BuildConfig.DEBUG logging is inactive.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
     buildFeatures {

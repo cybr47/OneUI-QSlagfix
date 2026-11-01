@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.2.0-animated-switch — no-swipe-panel-switch — 2026-11-01
+- Panel switches are animated again: the leaving panel fades out towards the bottom and the arriving panel fades in from the top. The switch now runs Samsung's own vertical slide (`PanelSlideEventHandler.createSlideAnimatorAndRun`, direction DOWN) instead of calling `slide$1(int)`, which committed the state and rendered only the final frame. Verified against the supplied One UI 9 SystemUI dex files.
+- Release builds are no longer minified. The release APK did not apply the gesture while the debug APK did, and R8 was the only build step that changed the executed code. The R8 effect was not isolated; release now takes the same D8 path as debug.
+- Both APKs log a few status lines per SystemUI start (loaded, hooks installed) and WARN lines on failure, so release builds can be diagnosed from the LSPosed log. `verify-apks.py` now requires those lines instead of forbidding them.
+- A single switch refused by Samsung is ignored and logged once; it no longer disables the gesture until SystemUI restarts. Only genuine contract/reflection failures do that.
+- Touching the header during a running panel animation no longer snaps it to its end: the touch-down check is read-only. A new swipe during an animation still settles the old one first.
+- Skip the reflective helper lookup for touch events of streams the module did not buffer.
+- Contract file records the new members (`createSlideAnimatorAndRun`, `updateResource`, `maxDragWidth`, `flingAnimationUtils`, `FlingAnimationUtils.mMinVelocityPxPerSecond`, `Direction.DOWN`) and which fields are static. New `scripts/verify-dex-contracts.py` checks them against raw `classes*.dex` files with only the Python standard library.
+- Unit tests updated for the animated path (in-flight animation counts as accepted, refusal is reported and recoverable, rapid swipes during an animation stay consistent, `canToggle` is read-only).
+
 ## 2.1.1-diagnostic — no-swipe-panel-switch — 2026-10-31
 - Investigate unchanged panel behavior with module/framework lifecycle and hook-registration diagnostics.
 - Log the first eight panel DOWN events and first native interception/slide only, in the debug APK, to expose rejected mode/root/header conditions.

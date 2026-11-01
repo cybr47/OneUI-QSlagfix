@@ -120,9 +120,20 @@
         "velocityTracker": "Landroid/view/VelocityTracker;",
         "direction": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
         "touchSlop": "I",
-        "shadeHeaderController$delegate": "Lkotlin/Lazy;"
+        "shadeHeaderController$delegate": "Lkotlin/Lazy;",
+        "maxDragWidth": "F",
+        "flingAnimationUtils": "Lcom/android/wm/shell/animation/FlingAnimationUtils;"
       },
-      "methods": []
+      "methods": [
+        {
+          "name": "createSlideAnimatorAndRun",
+          "descriptor": "(FF)V"
+        },
+        {
+          "name": "updateResource",
+          "descriptor": "()V"
+        }
+      ]
     },
     "Lcom/android/systemui/shade/ShadeHeaderController;": {
       "fields": {
@@ -139,7 +150,15 @@
         "isDetailClosing": "Z",
         "isCustomizerShowing": "Z"
       },
-      "methods": []
+      "methods": [],
+      "static_fields": [
+        "isCustomizerShowing",
+        "isDetailClosing",
+        "isDetailOpening",
+        "isDetailShowing",
+        "isSliding",
+        "state"
+      ]
     },
     "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;": {
       "fields": {},
@@ -163,7 +182,20 @@
       "fields": {
         "UNDECIDED": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
         "LEFT": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
-        "RIGHT": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;"
+        "RIGHT": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
+        "DOWN": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;"
+      },
+      "methods": [],
+      "static_fields": [
+        "UNDECIDED",
+        "DOWN",
+        "LEFT",
+        "RIGHT"
+      ]
+    },
+    "Lcom/android/wm/shell/animation/FlingAnimationUtils;": {
+      "fields": {
+        "mMinVelocityPxPerSecond": "F"
       },
       "methods": []
     }

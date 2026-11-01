@@ -18,6 +18,7 @@ final class NoSwipePanelHooks {
     private final WeakHashMap<View, Gesture> gestures = new WeakHashMap<>();
     private boolean replaying;
     private volatile boolean failed;
+    private boolean declinedLogged;
     private int debugDownCount;
     private boolean debugInterceptSeen;
     private boolean debugSlideSeen;
@@ -74,9 +75,13 @@ final class NoSwipePanelHooks {
                             module.debug("First native panel slide: direction=" + chain.getArg(1)
                                     + "; " + hooks.panels.debugState(chain.getThisObject()), null);
                         }
-                        if (!hooks.failed && hooks.panels.enabled(chain.getThisObject())) {
-                            String direction = ((Enum<?>) chain.getArg(1)).name();
-                            if ("LEFT".equals(direction) || "RIGHT".equals(direction)) return null;
+                        // Only horizontal slides are blocked. Samsung's vertical DOWN frames, which now
+                        // run every frame of the animated switch, pass straight through without any
+                        // reflective gating.
+                        String direction = ((Enum<?>) chain.getArg(1)).name();
+                        if (("LEFT".equals(direction) || "RIGHT".equals(direction))
+                                && !hooks.failed && hooks.panels.enabled(chain.getThisObject())) {
+                            return null;
                         }
                         return chain.proceed();
                     }));
@@ -94,10 +99,11 @@ final class NoSwipePanelHooks {
                         }
                         return chain.proceed();
                     }));
-            module.debug("Panel gesture hooks installed", null);
+            // Visible in release builds too: this is the line to look for in the LSPosed log.
+            module.note("Panel gesture hooks installed (animated status-bar panel switch)");
         } catch (Throwable error) {
             for (int i = handles.size() - 1; i >= 0; i--) handles.get(i).unhook();
-            module.debug("Panel gesture contract unavailable; retaining Samsung gestures", error);
+            module.warn("Panel gesture hooks NOT installed; stock Samsung gestures are unchanged", error);
         }
     }
 
@@ -115,6 +121,9 @@ final class NoSwipePanelHooks {
                 debugDown(root, event);
             }
         }
+        // Nothing of ours is in flight: MOVE/UP of a stream we never buffered belongs to Samsung, and
+        // there is no reason to walk the reflective helper chain for every touch event.
+        if (gesture == null && action != MotionEvent.ACTION_DOWN) return chain.proceed();
         if (failed) {
             // Never forward an orphan MOVE/UP after a module-owned DOWN.
             if (gesture == null) return chain.proceed();
@@ -129,8 +138,9 @@ final class NoSwipePanelHooks {
             if (action == MotionEvent.ACTION_DOWN) {
                 boolean candidate = event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
                         && event.getPointerCount() == 1 && root.isShown() && panels.available(helper);
+                // Read-only: a tap or an upward swipe must never snap a running panel animation to its end.
                 if (candidate && panels.inHeader(helper, event, new int[2])
-                        && PanelSwitch.settle(panels.access(helper))) {
+                        && PanelSwitch.canToggle(panels.access(helper))) {
                     gestures.put(root, new Gesture(event, panels.slop(helper)));
                     // Buffer this DOWN: a downward switch never enters the native collapse/fling
                     // path. Upward streams and taps replay the DOWN before returning to stock.
@@ -173,8 +183,11 @@ final class NoSwipePanelHooks {
         if (decision == SwipeSession.Decision.TOGGLE) {
             gesture.recycle();
             try {
-                if (!PanelSwitch.toggle(panels.access(helper))) {
-                    fail(new IllegalStateException("Samsung panel did not reach its terminal state"));
+                if (!PanelSwitch.toggle(panels.access(helper)) && !declinedLogged) {
+                    // Samsung refused this one switch (state unchanged). That is not a broken contract,
+                    // so the feature stays on; the swipe is simply ignored. Logged once per process.
+                    declinedLogged = true;
+                    module.warn("Samsung declined a panel switch; that swipe was ignored", null);
                 }
             } catch (ReflectiveOperationException | RuntimeException error) {
                 fail(error);
@@ -208,7 +221,7 @@ final class NoSwipePanelHooks {
 
     private void fail(Throwable error) {
         failed = true;
-        module.debug("Panel gestures disabled after an unexpected contract failure", error);
+        module.warn("Panel gestures disabled until SystemUI restarts: unexpected contract failure", error);
     }
 
     private void debugDown(View root, MotionEvent event) {

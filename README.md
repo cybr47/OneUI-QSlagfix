@@ -23,8 +23,8 @@ ANDROID_HOME=/path/to/android-sdk bash scripts/package-apks.sh
 ```
 
 The **Build APKs** Actions workflow runs on pushes to both branches and supports manual dispatch. Artifacts contain:
-- `app-debug.apk`: debuggable, module diagnostics enabled.
-- `app-release.apk`: R8 optimized, resource shrunk, non-debuggable, module diagnostics removed.
+- `app-debug.apk`: debuggable, verbose module diagnostics enabled.
+- `app-release.apk`: non-debuggable, not minified (R8 is off so it runs the same code path as the debug APK), verbose diagnostics inactive.
 - `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
 
 Both APK variants are signed with the same repository keystore on push/manual builds. Repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD` are required; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Missing credentials fail the build before compilation; there is no test-key fallback. Certificate verification confirms both APK signatures match and records the public SHA-256 fingerprint in `SIGNING.txt`. The private keystore is temporary and is never committed or uploaded. PR builds run checks without accessing signing secrets or publishing signed APKs. An older test-signed installation must be uninstalled once before installing an APK signed with the repository key.

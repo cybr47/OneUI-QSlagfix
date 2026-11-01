@@ -39,6 +39,8 @@ public final class SamsungMusicWavesHook extends XposedModule {
         }
         installed = true;
         if (BuildConfig.DEBUG) debug("SystemUI package ready: installing hooks", null);
+        // Visible in release builds: if this line is missing from the LSPosed log, the module never loaded.
+        note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TYPE + ")");
         ClassLoader loader = param.getClassLoader();
         installLegacyWave(loader);
         installColorfulWave(loader);
@@ -60,9 +62,9 @@ public final class SamsungMusicWavesHook extends XposedModule {
                 raiseStep(step, chain.getThisObject(), 10);
                 return result;
             });
-            debug("Legacy wave sampling installed (minimum stepX=10)", null);
+            note("Legacy wave sampling installed (minimum stepX=10)");
         } catch (Throwable error) {
-            debug("Legacy renderer unavailable; leaving that renderer unchanged", error);
+            warn("Legacy renderer unavailable; leaving that renderer unchanged", error);
         }
     }
 
@@ -99,9 +101,9 @@ public final class SamsungMusicWavesHook extends XposedModule {
                 }
                 return result;
             });
-            debug("Colorful wave sampling installed (effective stepX=8)", null);
+            note("Colorful wave sampling installed (effective stepX=8)");
         } catch (Throwable error) {
-            debug("Colorful renderer unavailable; leaving that renderer unchanged", error);
+            warn("Colorful renderer unavailable; leaving that renderer unchanged", error);
         }
     }
 
@@ -116,7 +118,20 @@ public final class SamsungMusicWavesHook extends XposedModule {
         if (field.getInt(receiver) < minimum) field.setInt(receiver, minimum);
     }
 
+    /** Verbose diagnostics: debug builds only. */
     void debug(String message, Throwable error) {
         if (BuildConfig.DEBUG) log(Log.INFO, "OneUI-QSlagfix", message, error);
+    }
+
+    /**
+     * Status lines that matter in every build, release included. They are written once per SystemUI
+     * start (or once per failure), never per touch event or frame.
+     */
+    void note(String message) {
+        log(Log.INFO, "OneUI-QSlagfix", message, null);
+    }
+
+    void warn(String message, Throwable error) {
+        log(Log.WARN, "OneUI-QSlagfix", message, error);
     }
 }

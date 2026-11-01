@@ -50,7 +50,7 @@ PY
   printf 'Source: %s\n' "${GITHUB_SHA:-$(git rev-parse HEAD)}"
   printf 'Branch: %s\n' "${GITHUB_REF_NAME:-$(git branch --show-current)}"
   printf 'Signing: repository keystore secrets (debug and release)\n'
-  printf 'Release: R8 optimized, resource shrunk, debuggable=false, diagnostics removed\n'
+  printf 'Release: not minified (R8 off, see app/build.gradle.kts), debuggable=false, verbose diagnostics inactive\n'
 } > artifacts/BUILD.txt
 (cd artifacts && sha256sum app-debug.apk app-release.apk > SHA256SUMS.txt)
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
