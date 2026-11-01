@@ -1,5 +1,22 @@
 # Status-bar swipe toggle branch
 
+## area-increase variant (2.2.1)
+
+This branch starts from `no-swipe-panel-switch` commit `5923eb6761ead9c5f291d895ccf04f3a569bba56`. The switch animation, direction classifier, touch threshold and native tap replay are retained.
+
+The open-panel swipe area now spans the full panel width down through the clock/date row and the QS edit, power and settings buttons. Taps still replay the original DOWN followed by UP to Samsung, so the existing button actions handle them. A downward movement past the native touch threshold switches panels and consumes the rest of that stream without dispatching a button click. Horizontal and upward handling remain as below.
+
+The added boundary is computed only on touch-down:
+
+- On the native notification/legacy header, use the visible `quick_qs_date_buttons` view's bottom on screen.
+- On the One UI 9 Compose QS header, use Samsung's `compose_header_clock` and `compose_header_date` AndroidViews and `sec_qs_buttons_container_height`. The APK's `HeaderContainer` centers the clock/date Row in this container; its clock has 1dp top padding and its bottom-aligned date has `date_text_bottom_padding`. These measured positions and resource dimensions include the whole row without using a fixed screen coordinate or percentage.
+- Hidden, detached, unmeasured and off-screen views do not extend the area. If the new views/resources are unavailable, the original status-header region remains.
+- During a panel transition, reuse the last settled boundary for the same window and panel dimensions. Animated header positions must not extend the hit-test into the panel body. Detach/configuration changes discard the cached boundary.
+
+Additional device checks: swipe down from the date text and all three button locations in both panels; tap edit, power and settings without moving; repeat with slight finger movement below touch slop; verify that QS tiles and notification cards below the row retain their normal gestures. Actual device input delivery remains unverified by static APK inspection and JVM tests.
+
+The remaining sections describe the inherited behavior; references there to the old status-header-only boundary are superseded by the area-increase rules above.
+
 This branch is derived from main `078579d56002c205941cb2977c6d3fafb85c0c18`. It adds only the gesture implementation, regression tests, version/description changes and this documentation. The media-wave fixes and build workflow are inherited.
 
 ## Behavior

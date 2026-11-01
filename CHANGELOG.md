@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.1-area-increase — area-increase — 2026-11-01
+- Extend the open-panel swipe area through the existing clock/date and QS edit/power/settings row, using Samsung's measured views and configured row height.
+- Preserve native button taps through the existing DOWN/UP replay; downward swipes over the buttons switch panels without clicking them.
+- Keep the last settled header bounds during panel animations so moving content cannot expand the gesture area into notifications or QS tiles. Clear those bounds on configuration changes and detach.
+- Keep the animated switch, horizontal-swipe blocking, upward close, media sampling, signing and release settings from 2.2.0.
+- Enable the existing build workflow for this branch; versionCode is 6 for installation over 2.2.0.
+
 ## 2.2.0-animated-switch — no-swipe-panel-switch — 2026-11-01
 - Panel switches are animated again: the leaving panel fades out towards the bottom and the arriving panel fades in from the top. The switch now runs Samsung's own vertical slide (`PanelSlideEventHandler.createSlideAnimatorAndRun`, direction DOWN) instead of calling `slide$1(int)`, which committed the state and rendered only the final frame. Verified against the supplied One UI 9 SystemUI dex files.
 - Release builds are no longer minified. The release APK did not apply the gesture while the debug APK did, and R8 was the only build step that changed the executed code. The R8 effect was not isolated; release now takes the same D8 path as debug.

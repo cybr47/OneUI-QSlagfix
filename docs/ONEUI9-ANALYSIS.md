@@ -32,6 +32,16 @@ Verified in classes3.dex:
 - `slide$1(int)` calls updateState and sends a completed DOWN transition to SecQSImplAnimatorManager. updateState notifies listeners, updates SplitStateRepository and visibility. Reuse this; do not substitute a private panel boolean.
 - `PanelTransitionAnimator.slide(...)` publishes Compose slide fraction and view transforms. Horizontal gestures otherwise drive repeated updates through the drag/fling animator.
 
+## Date/button row used by area-increase
+
+Rechecked against the same APK checksum above:
+
+- `res/layout/sec_qqs_date_buttons.xml` identifies the native row as `quick_qs_date_buttons`; it contains the clock/date and `header_settings_container`.
+- `SecQuickSettingHeaderKt.HeaderContainer` in classes3.dex uses `sec_qs_buttons_container_height` for its Compose Box. The clock/date Row is aligned `CenterStart`; the clock AndroidView has 1dp top padding, and the date is bottom-aligned with `SecQSPanelResourceNormalPicker.getQSClockBottomPadding`, which reads `date_text_bottom_padding`.
+- The AndroidView factories set the tags `compose_header_clock` and `compose_header_date` and inflate `sec_qs_panel_clock` / `sec_qs_panel_date` respectively. They provide native view positions even though the surrounding QS row and its buttons use Compose.
+
+The area-increase hit-test reads those live views/resources only at touch-down. It does not hook Compose rendering or change the button click handlers. During a transition it uses the last settled hit-test boundary, rather than following the animated date row down the screen.
+
 ## Framework API
 
 Uses `io.github.libxposed:api:102.0.0`, the latest release verified during this work. Modern no-argument XposedModule entry, onModuleLoaded/onPackageReady, interceptor chains, compileOnly dependency, META-INF metadata/scope, protective exception mode and R8 rules follow:

@@ -11,8 +11,8 @@ android {
         applicationId = "com.samsung.music.qs.lagfix"
         minSdk = 31
         targetSdk = 36
-        versionCode = 5
-        versionName = "2.2.0-animated-switch"
+        versionCode = 6
+        versionName = "2.2.1-area-increase"
     }
 
     buildTypes {

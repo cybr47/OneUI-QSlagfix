@@ -88,10 +88,12 @@ final class NoSwipePanelHooks {
             handles.add(module.hook(hooks.panels.rootDetached).setId("panel-gesture-detach")
                     .intercept(chain -> {
                         hooks.clear((View) chain.getThisObject());
+                        hooks.panels.clearHeaderArea((View) chain.getThisObject());
                         return chain.proceed();
                     }));
             handles.add(module.hook(hooks.panels.rootConfig).setId("panel-gesture-configuration")
                     .intercept(chain -> {
+                        hooks.panels.clearHeaderArea((View) chain.getThisObject());
                         Gesture gesture = hooks.gestures.get((View) chain.getThisObject());
                         if (gesture != null) {
                             gesture.recycle();
@@ -142,8 +144,9 @@ final class NoSwipePanelHooks {
                 if (candidate && panels.inHeader(helper, event, new int[2])
                         && PanelSwitch.canToggle(panels.access(helper))) {
                     gestures.put(root, new Gesture(event, panels.slop(helper)));
-                    // Buffer this DOWN: a downward switch never enters the native collapse/fling
-                    // path. Upward streams and taps replay the DOWN before returning to stock.
+                    // Buffer this DOWN, including over the date row and QS edit/power/settings buttons.
+                    // Taps replay DOWN/UP to Samsung; a swipe never clicks the button or enters the
+                    // native collapse/fling path. Upward streams also return to stock.
                     return true;
                 }
                 passthrough = true;

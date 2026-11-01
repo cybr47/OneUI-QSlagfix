@@ -3,11 +3,14 @@ package com.samsung.music.qs.lagfix;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
+import android.content.res.Resources;
+import android.graphics.Rect;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.WeakHashMap;
 
 /** Cached reflection contracts verified in the supplied SystemUI APK; no name alternatives. */
 final class NativePanels {
@@ -23,6 +26,20 @@ final class NativePanels {
     private final Method createSlide, updateResource;
     private final Field maxDrag, flingUtils, minFlingVelocity;
     private final Object undecided, down;
+    private final WeakHashMap<View, HeaderArea> headerAreas = new WeakHashMap<>();
+    private boolean headerResourcesResolved;
+    private int dateButtonsId, buttonsHeightId, dateBottomPaddingId;
+
+    private static final class HeaderArea {
+        final int width, height;
+        final float bottom;
+
+        HeaderArea(View panel, float bottom) {
+            width = panel.getWidth();
+            height = panel.getHeight();
+            this.bottom = bottom;
+        }
+    }
 
     /**
      * Release velocity (px/s) handed to Samsung's own slide animator. It only needs to exceed the
@@ -148,12 +165,79 @@ final class NativePanels {
         if (area == null) return false;
         Object h = handler.get(helper);
         View existingHeader = (View) header.get(lazyValue.invoke(headerLazy.get(h)));
-        // Exactly Samsung's measured-height boundary, translated to the panel's coordinate space.
         area.getLocationOnScreen(location);
+        int panelTop = location[1];
         float x = event.getRawX() - location[0];
-        float y = event.getRawY() - location[1];
-        return existingHeader.getMeasuredHeight() > 0 && x >= 0 && x < area.getWidth()
-                && y >= 0 && y < existingHeader.getMeasuredHeight();
+        float y = event.getRawY() - panelTop;
+        if (x < 0 || x >= area.getWidth() || y < 0 || y >= area.getHeight()) return false;
+
+        View window = area.getRootView();
+        float bottom = existingHeader.getMeasuredHeight();
+        if (current.getInt(helper) == PanelSwitch.TRANSITION) {
+            // Moving headers must not temporarily turn the notification/tile body into a swipe area.
+            HeaderArea previous = headerAreas.get(window);
+            if (previous != null && previous.width == area.getWidth() && previous.height == area.getHeight()) {
+                bottom = Math.max(bottom, previous.bottom);
+            }
+        } else {
+            bottom = Math.max(bottom, dateRowBottom(window, area.getResources(), panelTop, location));
+            bottom = Math.min(bottom, area.getHeight());
+            headerAreas.put(window, new HeaderArea(area, bottom));
+        }
+        return y < bottom;
+    }
+
+    private float dateRowBottom(View window, Resources resources, int panelTop, int[] location) {
+        if (!headerResourcesResolved) {
+            dateButtonsId = resources.getIdentifier("quick_qs_date_buttons", "id", "com.android.systemui");
+            buttonsHeightId = resources.getIdentifier("sec_qs_buttons_container_height", "dimen", "com.android.systemui");
+            dateBottomPaddingId = resources.getIdentifier("date_text_bottom_padding", "dimen", "com.android.systemui");
+            headerResourcesResolved = true;
+        }
+        Rect visible = new Rect();
+        float bottom = 0f;
+        // The notification/legacy header exposes the whole clock/date/button row as a native view.
+        View dateButtons = dateButtonsId == 0 ? null : window.findViewById(dateButtonsId);
+        if (visible(dateButtons, visible)) {
+            dateButtons.getLocationOnScreen(location);
+            bottom = location[1] + dateButtons.getHeight() - panelTop;
+        }
+
+        // One UI 9's QS header is Compose; these two AndroidView tags are set by Samsung itself.
+        View clock = window.findViewWithTag("compose_header_clock");
+        View date = window.findViewWithTag("compose_header_date");
+        boolean clockVisible = visible(clock, visible);
+        boolean dateVisible = visible(date, visible);
+        float dateBottom = 0f;
+        if (dateVisible) {
+            date.getLocationOnScreen(location);
+            dateBottom = location[1] + date.getHeight() - panelTop;
+            bottom = Math.max(bottom, dateBottom);
+        }
+        if (clockVisible && buttonsHeightId != 0) {
+            clock.getLocationOnScreen(location);
+            // HeaderContainer centers its clock/date Row in sec_qs_buttons_container_height.
+            // The clock has 1dp top padding; the bottom-aligned date has date_text_bottom_padding.
+            float rowTop = location[1] - panelTop - resources.getDisplayMetrics().density;
+            float rowBottom = location[1] + clock.getHeight() - panelTop;
+            if (dateVisible && dateBottomPaddingId != 0) {
+                rowBottom = Math.max(rowBottom, dateBottom + resources.getDimensionPixelSize(dateBottomPaddingId));
+            }
+            float containerBottom = (rowTop + rowBottom
+                    + resources.getDimensionPixelSize(buttonsHeightId)) / 2f;
+            bottom = Math.max(bottom, Math.max(rowBottom, containerBottom));
+        }
+        return bottom;
+    }
+
+    private static boolean visible(View view, Rect bounds) {
+        return view != null && view.isShown() && view.isAttachedToWindow()
+                && view.getAlpha() > 0f && view.getWidth() > 0 && view.getHeight() > 0
+                && view.getGlobalVisibleRect(bounds);
+    }
+
+    void clearHeaderArea(View root) {
+        headerAreas.remove(root.getRootView());
     }
 
     float slop(Object helper) throws IllegalAccessException {

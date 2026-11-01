@@ -5,13 +5,14 @@ SystemUI-only libxposed module targeting the supplied Samsung One UI 9 Indian-RO
 ## Branches
 - **main**: media-wave sampling only; Samsung's panel gestures.
 - **no-swipe-panel-switch**: separate gesture variant: horizontal panel switching disabled; repeated downward header swipes toggle panels. See [gesture behavior, assumptions and rollback](docs/NO-SWIPE-PANEL-SWITCH.md).
+- **area-increase**: the same gesture behavior, with the swipe area extended through the clock/date and QS edit/power/settings row. Button taps are forwarded to Samsung normally.
 
 The original optimization reduces the legacy media progress wave's sampling resolution (stepX=10). One UI 9 also contains a colourful renderer whose per-style step is clamped to 1..8; this fork uses 8 and reapplies after style updates. This reduces sampling work. Smoothness and battery improvements have not been measured on-device.
 
 ## Install and runtime rollback
 1. Use an LSPosed implementation supporting **modern libxposed API 102**.
 2. Install one branch APK, enable it with **System UI / com.android.systemui** scope and reboot.
-3. Both branches share one application ID; install only one variant.
+3. All branches share one application ID; install only one variant.
 
 Disable this module in LSPosed and reboot to restore stock behavior. To keep media sampling and discard the gesture experiment, install the main APK (same certificate; its older versionCode may require uninstalling the branch APK first), enable it and reboot. If SystemUI is unusable, follow your LSPosed implementation's documented module-disable/recovery procedure.
 
@@ -22,7 +23,7 @@ JDK 21, SDK platform 36 and build-tools 36.0.0:
 ANDROID_HOME=/path/to/android-sdk bash scripts/package-apks.sh
 ```
 
-The **Build APKs** Actions workflow runs on pushes to both branches and supports manual dispatch. Artifacts contain:
+The **Build APKs** Actions workflow runs on pushes to all three branches and supports manual dispatch. Artifacts contain:
 - `app-debug.apk`: debuggable, verbose module diagnostics enabled.
 - `app-release.apk`: non-debuggable, not minified (R8 is off so it runs the same code path as the debug APK), verbose diagnostics inactive.
 - `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
