@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1-lockscreen — area-increase — 2026-11-01
+- Enable the existing common-header drag/release adapter for SHADE_LOCKED (status 2), as well as SHADE (status 0), so it applies to split panels opened from the lockscreen.
+- Retain Samsung's native keyguard, panel-disabled, detail-screen and pop-over policies, plus the tested drag/reversal/release and button behavior.
+- The media-wave sampling hooks already apply regardless of lock state; no renderer or animation hooks are added.
+
 ## 2.3.0-native-drag — area-increase — 2026-11-01
 - Replace the automatic switch trigger with Samsung's original touch interception and drag/release handling. Finger position drives the transition; Samsung decides whether to complete or return on release.
 - Widen the native start-area flag across the expanded clock/date/button row. Adapt the separate native header-height checks only during interception, after real pointer deltas have been calculated, and restore the real origin before touch/release handling.

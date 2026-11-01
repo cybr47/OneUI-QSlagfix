@@ -1,6 +1,6 @@
 # Common header drag-and-release — area-increase
 
-Version 2.3.0-native-drag replaces the automatic panel toggle on this branch with Samsung's native interactive vertical gesture. The source branch no-swipe-panel-switch keeps its existing behavior.
+Version 2.3.0-native-drag replaces the automatic panel toggle on this branch with Samsung's native interactive vertical gesture. Version 2.3.1-lockscreen also enables that adapter for split panels opened from the lockscreen. The source branch no-swipe-panel-switch keeps its existing behavior.
 
 ## Behavior
 
@@ -16,6 +16,12 @@ Version 2.3.0-native-drag replaces the automatic panel toggle on this branch wit
 | Either panel open | Upward close gesture | Samsung's original close handling |
 
 A native release animation in progress follows Samsung's policy for new touches. The module no longer snaps an earlier animation to its destination or forces another change.
+
+## Lockscreen panels and media sampling
+
+The adapter accepts status SHADE (0) and SHADE_LOCKED (2). The supplied APK's StatusBarState.toString identifies state 2 as SHADE_LOCKED, and the QS animator callbacks mirror the status into QsAnimatorState.state. Samsung's native onIntercept excludes KEYGUARD (1) but permits the already opened locked shade. The module keeps that native distinction and its existing split-panel/expanded/detail/disabled/pop-over checks.
+
+The media-wave hooks already run on renderer construction and style updates throughout SystemUI, with no status-bar-state filter. Matching renderers in lockscreen panels therefore receive the same sampling adjustment without additional hooks.
 
 ## Start area
 
@@ -68,10 +74,11 @@ On the phone, check:
 - Compare slow release, a short fling, upward close and repeated physical gestures with Samsung's stock behavior.
 - Tap edit, power and settings, including slight movement below touch slop and native pressed/long-press feedback.
 - Check QS sliders, notification scrolling/dismissals, pointer handoff, rotation and lock/unlock.
+- Open each panel from the lockscreen and repeat the header drag/hold/reverse/release and button checks.
 - Confirm that closed-panel routing still follows Samsung's left/right and reversed settings.
 
 ## Install and rollback
 
-Install one branch APK, enable System UI / com.android.systemui scope and reboot. Both variants use the repository signing key; versionCode 7 permits an update over 2.2.x signed with the same key.
+Install one branch APK, enable System UI / com.android.systemui scope and reboot. Both variants use the repository signing key; versionCode 8 permits an update over 2.3.0 or 2.2.x signed with the same key.
 
 Disable the module and reboot for stock behavior. Install main for media sampling only; its lower versionCode may require uninstalling the experimental APK first. A source rollback can revert the native-drag commit without changing the other branches.

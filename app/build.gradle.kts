@@ -11,8 +11,8 @@ android {
         applicationId = "com.samsung.music.qs.lagfix"
         minSdk = 31
         targetSdk = 36
-        versionCode = 7
-        versionName = "2.3.0-native-drag"
+        versionCode = 8
+        versionName = "2.3.1-lockscreen"
     }
 
     buildTypes {

@@ -13,6 +13,8 @@ final class NativePanels {
     private static final int QS = 0;
     private static final int NOTIFICATIONS = 1;
     private static final int TRANSITION = 2;
+    private static final int STATUS_SHADE = 0;
+    private static final int STATUS_SHADE_LOCKED = 2;
     final Method intercept, touch, initiate, pointerDeltas, updateDirection, rootDetached, rootConfig;
     private final Field owner, enabled, expanded, current, handler, panelRoot;
     private final Field qsDisabled, shadeDisabled, mode, initialY, changeSpot, intercepted, direction;
@@ -87,8 +89,12 @@ final class NativePanels {
     }
 
     boolean available(Object helper) throws ReflectiveOperationException {
-        if (helper == null || !enabled.getBoolean(helper) || !expanded.getBoolean(helper)
-                || status.getInt(null) != 0 || qsDisabled.getBoolean(helper) || shadeDisabled.getBoolean(helper)
+        if (helper == null) return false;
+        int barState = status.getInt(null);
+        // Samsung supports both the unlocked shade and the expanded shade above the lockscreen.
+        if (!enabled.getBoolean(helper) || !expanded.getBoolean(helper)
+                || (barState != STATUS_SHADE && barState != STATUS_SHADE_LOCKED)
+                || qsDisabled.getBoolean(helper) || shadeDisabled.getBoolean(helper)
                 || (boolean) popOver.invoke(mode.get(helper)) || detailOpening.getBoolean(null)
                 || detailShowing.getBoolean(null) || detailClosing.getBoolean(null)
                 || customizing.getBoolean(null)) return false;

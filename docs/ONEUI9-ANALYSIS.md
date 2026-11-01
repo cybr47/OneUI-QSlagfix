@@ -50,6 +50,12 @@ The module widens the start flag and, only after native deltas have been calcula
 
 The native interception caller is explicitly deoptimized to preserve its hooked callee calls against ART inlining, using the documented [libxposed API](https://github.com/libxposed/api). Live touch/render/release methods are not explicitly deoptimized.
 
+## Lockscreen shade used by area-increase 2.3.1
+
+In classes3.dex, StatusBarState.toString maps 0 to SHADE, 1 to KEYGUARD and 2 to SHADE_LOCKED. SecQSImplAnimatorBase.onStateChanged and the concrete QS animator callbacks assign that value to QsAnimatorState.state. SecPanelSplitHelper.onIntercept rejects state 1, while slide contains explicit status-2 branches for native vertical switching from the locked shade, including qs_swipe_ver_keyguard analytics.
+
+The module previously required status 0. Version 2.3.1 accepts 0 or 2 while keeping native interception and all other availability checks. The wave sampling hooks have no status-state filter and already cover matching renderers in the locked shade.
+
 ## Framework API
 
 Uses `io.github.libxposed:api:102.0.0`, the latest release verified during this work. Modern no-argument XposedModule entry, onModuleLoaded/onPackageReady, interceptor chains, compileOnly dependency, META-INF metadata/scope, protective exception mode and R8 rules follow:
