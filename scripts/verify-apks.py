@@ -39,8 +39,8 @@ for index, argument in enumerate(sys.argv[1:]):
             # Release is intentionally not minified (see app/build.gradle.kts) and writes one short status
             # line per SystemUI start, so the LSPosed log proves the module loaded and its hooks installed.
             blob = b"".join(dexes)
-            for message in [b"Loaded in SystemUI, module version", b"Legacy wave sampling installed",
-                            b"Colorful wave sampling installed", b"Panel gesture hooks installed"]:
+            for message in [b"Loaded in SystemUI, module version",
+                            b"Horizontal panel transition hooks installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()
     sdk = os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"]
     actual = subprocess.check_output([str(Path(sdk) / "cmdline-tools/latest/bin/apkanalyzer"),

@@ -1,38 +1,26 @@
-# One UI QS Lag Fix
+# ShadeSwitch
 
-SystemUI-only libxposed module targeting the supplied Samsung One UI 9 Indian-ROM SystemUI 17 APK. See [APK findings](docs/ONEUI9-ANALYSIS.md) and [changelog](CHANGELOG.md).
+An LSPosed module (`io.github.libxposed.api:101.0.0`) for **Samsung One UI 9 / Android 17** (`com.android.systemui`) that replaces Samsung's delayed cross-fade and `±300px` slide between **Notifications** and **Quick Settings** with a **GlassUI-style rigid horizontal page transition** driven directly by Samsung's native drag progress.
 
-## Branches
-- **main**: media-wave sampling only; Samsung's panel gestures.
-- **no-swipe-panel-switch**: separate gesture variant: horizontal panel switching disabled; repeated downward header swipes toggle panels. See [gesture behavior, assumptions and rollback](docs/NO-SWIPE-PANEL-SWITCH.md).
-- **area-increase**: Samsung's interactive drag-and-release panel switching across the full clock/date and QS button row, including split panels opened from the lockscreen. Hold, reverse or release the drag; ordinary button taps stay native. Horizontal panel switching is disabled.
+> **Branch Architecture**
+> - `cust` (this branch): Keeps Samsung's native horizontal gesture enabled by default and drives both pages with rigid full-width translation and a symmetric `FADE_CUTOFF = 0.45f` outgoing fade while keeping the stock Compose Quick Settings scene drawable throughout the drag.
+> - `area-increase`: Separate vertical-only variant (`NoSwipePanelHooks`) that disables horizontal panel switching and splits top-down pull zones at `60%` / `40%`.
 
-The original optimization reduces the legacy media progress wave's sampling resolution (stepX=10). One UI 9 also contains a colourful renderer whose per-style step is clamped to 1..8; this fork uses 8 and reapplies after style updates. This reduces sampling work. Smoothness and battery improvements have not been measured on-device.
+---
 
-## Install and runtime rollback
-1. Use an LSPosed implementation supporting **modern libxposed API 102**.
-2. Install one branch APK, enable it with **System UI / com.android.systemui** scope and reboot.
-3. All branches share one application ID; install only one variant.
+## Behavior on `cust`
 
-Disable this module in LSPosed and reboot to restore stock behavior. To keep media sampling and discard the gesture experiment, install the main APK (same certificate; its older versionCode may require uninstalling the branch APK first), enable it and reboot. If SystemUI is unusable, follow your LSPosed implementation's documented module-disable/recovery procedure.
-
-## Build
-JDK 21, SDK platform 36 and build-tools 36.0.0:
-```sh
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
-ANDROID_HOME=/path/to/android-sdk bash scripts/package-apks.sh
-```
-
-The **Build APKs** Actions workflow runs on pushes to all three branches and supports manual dispatch. Artifacts contain:
-- `app-debug.apk`: debuggable, verbose module diagnostics enabled.
-- `app-release.apk`: non-debuggable, not minified (R8 is off so it runs the same code path as the debug APK), verbose diagnostics inactive.
-- `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
-
-Both APK variants are signed with the same repository keystore on push/manual builds. Repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD` are required; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Missing credentials fail the build before compilation; there is no test-key fallback. Certificate verification confirms both APK signatures match and records the public SHA-256 fingerprint in `SIGNING.txt`. The private keystore is temporary and is never committed or uploaded. PR builds run checks without accessing signing secrets or publishing signed APKs. An older test-signed installation must be uninstalled once before installing an APK signed with the repository key.
-
-## Source rollback
-Pre-work main: `68fd7d47cc6b466690874bab1057e2eb59815e75`.
-Use `git revert <commit>` then a normal push for a history-preserving rollback. Stage 2 is confined to its branch and can be discarded without modifying main.
-
-## Attribution and license
-The original stepX optimization is from Samsung QS Lag Fix / OneUI-QSlagfix, originally targeting UN1CA 3. See [NOTICE](NOTICE) and [LICENSE](LICENSE) (Apache License 2.0).
+1. **Native Horizontal Drag & Reversed Panel Order**:
+   - In normal panel order (`SecPanelSplitHelper.isReversed() == false`), swiping left brings **Quick Settings** in from the right (`+width -> 0`) and moves **Notifications** to the left (`0 -> -width`); swiping right brings **Notifications** in from the left (`-width -> 0`) and moves **Quick Settings** to the right (`0 -> +width`).
+   - Respects Samsung's reversed panel order (`isReversed() == true`).
+   - Preserves Samsung's native gesture ownership for QS tile paging, notification dismissal, brightness/volume sliders, header taps, and shade closing, plus Samsung's native release/reversal/fling completion logic (`PanelSlideEventHandler.createSlideAnimatorAndRun`).
+2. **Symmetric Outgoing Fade (`FADE_CUTOFF = 0.45f`) & Immediate Incoming Visibility**:
+   - The incoming page renders at full opacity (`1.0f`) on the first frame it enters the screen.
+   - The outgoing page begins fading on the first visible movement (`progress > 0f`) and reaches `0.0f` opacity at `HorizontalTransitionMath.FADE_CUTOFF = 0.45f` (`45%` incoming drag progress) in both directions, continuing rigid translation after the fade finishes.
+   - Holding mid-swipe holds both pages in place; reversing finger movement moves both pages back together and restores outgoing opacity along the same curve.
+3. **Stock Compose Quick Settings Render Fix**:
+   - In stock One UI 9 `SystemUI.apk`, `SecQSPanelComposeAdapter.setSlideFraction(slideFraction)` drives `QuickSettingSceneViewModel` (`isPresenting = !collapsed && slideFraction < 1.0f`, `alphaOfScene = min(expFactor, 1f - slideFraction)`) and `SecQuickSettingScene` (`translationYOfScene = -5000f` when `slideFraction == 1.0f`, `translationXOfScene = slideFraction * 300f`).
+   - During an active horizontal transition (`panelTransitionState == TRANSITION_STATE`), `HorizontalPanelTransitionHooks` pins `composeAdapter.setSlideFraction(0.0f)` and keeps `qsRootView` (`SecQSPanelComposeRoot`), its `ComposeView` child, and its ancestors `View.VISIBLE` so QS tiles, sliders, and media controls are already visible during the drag.
+   - When the transition settles (on completion `fraction == 1.0f`, cancellation/reversal `fraction == 0.0f`, `clearAnimationState()`, or `onPanelClosed$1()`), native visibility, alpha, translation, and settled `slideFraction` (`0.0f` for `QS_STATE`, `1.0f` for `SHADE_STATE`) are restored.
+4. **Media-Wave Renderer Review**:
+   - Removed the legacy/colorful media-wave `stepX` coarsening hooks (`stepX = 10` / `8`) from `cust` because stock One UI 9's `MultiWaveAreaTrackRenderer` already early-outs when idle and caches its gradients/xfermodes; raising `stepX` only coarsened the waveform without improving panel transition smoothness. `SamsungMusicWavesHook` remains the Xposed entry point.

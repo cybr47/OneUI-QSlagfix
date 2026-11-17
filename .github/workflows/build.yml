@@ -2,9 +2,9 @@ name: Build APKs
 
 on:
   push:
-    branches: [main, no-swipe-panel-switch, area-increase]
+    branches: [main, no-swipe-panel-switch, area-increase, cust]
   pull_request:
-    branches: [main, no-swipe-panel-switch, area-increase]
+    branches: [main, no-swipe-panel-switch, area-increase, cust]
   workflow_dispatch:
 
 permissions:

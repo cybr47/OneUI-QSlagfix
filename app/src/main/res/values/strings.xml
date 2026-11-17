@@ -1,4 +1,4 @@
 <resources>
-    <string name="app_name">One UI QS Lag Fix (header drag)</string>
-    <string name="xposed_description">Optimizes media waves. Drag down from the clock/date header to move between panels using Samsung transitions. Horizontal panel switching is disabled.</string>
+    <string name="app_name">ShadeSwitch</string>
+    <string name="xposed_description">Swipe left or right to switch between Notifications and Quick Settings.</string>
 </resources>

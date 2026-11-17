@@ -1,0 +1,375 @@
+package com.samsung.music.qs.lagfix;
+
+import android.os.Looper;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.WeakHashMap;
+import io.github.libxposed.api.XposedInterface;
+
+/**
+ * Installs the GlassUI-style horizontal transition between Notifications and Quick Settings on
+ * the {@code cust} branch of OneUI-QSlagfix using the libxposed 102
+ * {@code module.hook(method).intercept(...)} API.
+ *
+ * <p>Key design guarantees:
+ * <ol>
+ *   <li><b>All reflection resolved once</b>: {@link NativePanels} resolves every {@link Class},
+ *       {@link java.lang.reflect.Field}, {@link java.lang.reflect.Method}, and {@code Direction}
+ *       enum constant once during {@link #install(SamsungMusicWavesHook, ClassLoader)}, and caches
+ *       per-animator object/view references inside {@link HorizontalSwipeSession} when a swipe
+ *       starts.
+ *   <li><b>No double {@code slideFraction} writes per frame</b>: During an active horizontal
+ *       transition ({@code panelTransitionState == TRANSITION_STATE}, {@code LEFT}/{@code RIGHT},
+ *       {@code overSlideX == 0f}), {@link #interceptSlide} handles the frame directly without
+ *       invoking stock {@code PanelTransitionAnimator.slide} (which would otherwise write
+ *       {@code 1f - fraction} or {@code fraction} to {@code composeAdapter.setSlideFraction} and
+ *       step stock's {@code ±300px}/{@code ±250px} {@code TouchAnimator}s). Instead,
+ *       {@code setSlideFraction(0f)} is written at most once when the horizontal swipe begins.
+ *   <li><b>Scoped cleanup &amp; exact prior-value restoration</b>: View mutations and cleanup are
+ *       strictly scoped to an active {@link HorizontalSwipeSession}. When no horizontal swipe is
+ *       active, {@code onPanelTransitionStateChanged}, {@code clearAnimationState}, and
+ *       {@code onPanelClosed$1} pass through untouched so ordinary vertical shade and lockscreen
+ *       animations are never disturbed. When an active horizontal swipe ends, every modified view
+ *       (including ancestors and {@code ComposeView} children) is restored to its exact saved
+ *       prior values before native settlement runs.
+ * </ol>
+ */
+final class HorizontalPanelTransitionHooks {
+    private final SamsungMusicWavesHook module;
+    private final NativePanels panels;
+    private final WeakHashMap<Object, HorizontalSwipeSession> sessions = new WeakHashMap<>();
+    private final WeakHashMap<Object, HorizontalSwipeSession> adapterSessions = new WeakHashMap<>();
+    private boolean internalSlideFractionWrite;
+    private volatile boolean failed;
+
+    private HorizontalPanelTransitionHooks(SamsungMusicWavesHook module, ClassLoader loader)
+            throws ReflectiveOperationException {
+        this.module = module;
+        this.panels = new NativePanels(loader);
+    }
+
+    static void install(SamsungMusicWavesHook module, ClassLoader loader) {
+        List<XposedInterface.HookHandle> handles = new ArrayList<>();
+        try {
+            HorizontalPanelTransitionHooks hooks = new HorizontalPanelTransitionHooks(module, loader);
+            handles.add(module.hook(hooks.panels.slide)
+                    .setId("horizontal-panel-slide")
+                    .intercept(hooks::interceptSlide));
+            handles.add(module.hook(hooks.panels.onTransitionStateChanged)
+                    .setId("horizontal-panel-state")
+                    .intercept(hooks::interceptStateChanged));
+            handles.add(module.hook(hooks.panels.clearAnimationState)
+                    .setId("horizontal-panel-clear")
+                    .intercept(hooks::interceptClearAnimationState));
+            if (hooks.panels.onPanelClosed != null) {
+                handles.add(module.hook(hooks.panels.onPanelClosed)
+                        .setId("horizontal-panel-closed")
+                        .intercept(hooks::interceptClearAnimationState));
+            }
+            handles.add(module.hook(hooks.panels.setSlideFraction)
+                    .setId("horizontal-compose-slide-fraction")
+                    .intercept(hooks::interceptSetSlideFraction));
+            module.note("Horizontal panel transition hooks installed (FADE_CUTOFF="
+                    + HorizontalTransitionMath.FADE_CUTOFF + ")");
+        } catch (Throwable error) {
+            for (int i = handles.size() - 1; i >= 0; i--) {
+                handles.get(i).unhook();
+            }
+            module.warn("Horizontal panel transition hooks NOT installed; stock Samsung transitions are unchanged", error);
+        }
+    }
+
+    private Object interceptSlide(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread()) {
+            return chain.proceed();
+        }
+        Object animator = chain.getThisObject();
+        if (animator == null) {
+            return chain.proceed();
+        }
+
+        try {
+            Object direction = chain.getArg(2);
+            String directionName = panels.directionName(direction);
+            float overSlideX = ((Number) chain.getArg(1)).floatValue();
+            int transitionState = panels.getTransitionState(animator);
+
+            boolean activeHorizontal = directionName != null
+                    && overSlideX == 0.0f
+                    && transitionState == HorizontalTransitionMath.TRANSITION_STATE
+                    && panels.isSplitEnabled(animator)
+                    && !panels.isThereNoView(animator);
+
+            if (!activeHorizontal) {
+                // If an active horizontal swipe session just transitioned to a settled slide call
+                // (or overslide/vertical slide), restore all saved prior view properties first and
+                // let Samsung's native slide method handle the non-horizontal/settled branch.
+                HorizontalSwipeSession existing = sessions.get(animator);
+                if (existing != null && existing.isActive()) {
+                    endSession(animator, existing, transitionState, false);
+                }
+                return chain.proceed();
+            }
+
+            float fraction = ((Number) chain.getArg(0)).floatValue();
+            int stateToChange = ((Number) chain.getArg(3)).intValue();
+
+            HorizontalSwipeSession session = sessions.get(animator);
+            if (session == null) {
+                session = new HorizontalSwipeSession();
+                sessions.put(animator, session);
+            }
+            if (!session.isActive()) {
+                session.begin();
+                panels.bindSession(animator, session);
+                if (session.composeAdapter != null) {
+                    adapterSessions.put(session.composeAdapter, session);
+                }
+            }
+
+            if (session.qsRootView == null || session.shadeRootView == null) {
+                endSession(animator, session, transitionState, false);
+                return chain.proceed();
+            }
+
+            float width = panels.resolvePanelWidth(session);
+            if (width <= 0.0f) {
+                return chain.proceed();
+            }
+
+            HorizontalTransitionMath.FrameTransform frame =
+                    HorizontalTransitionMath.FrameTransform.forSlide(
+                            transitionState,
+                            fraction,
+                            overSlideX,
+                            directionName,
+                            stateToChange,
+                            width,
+                            session.reversed);
+            if (!frame.activeHorizontal) {
+                return chain.proceed();
+            }
+
+            // 1. Pin Compose slideFraction to 0.0f at most once when the horizontal swipe starts
+            //    so the Compose QS scene renders immediately without two writes per frame.
+            pinComposeSlideFractionOnce(session);
+
+            // 2. Ensure ancestor containers up to panelRootView and ComposeView children inside
+            //    qsRootView are drawable, saving their exact prior values before any change.
+            panels.prepareDrawables(session);
+
+            // 3. Save prior panel view properties (on first frame) and apply rigid full-width
+            //    translationX and FADE_CUTOFF (0.45f) opacity.
+            session.applyPageTransform(
+                    session.qsRootView,
+                    session.qsAnimView,
+                    frame.qsTranslationX,
+                    frame.qsAlpha,
+                    true,
+                    panels);
+            session.applyPageTransform(
+                    session.shadeRootView,
+                    session.shadeAnimView,
+                    frame.notificationsTranslationX,
+                    frame.notificationsAlpha,
+                    true,
+                    panels);
+            session.applyPageTransform(
+                    session.buttonView,
+                    session.buttonAnimView,
+                    frame.notificationsTranslationX,
+                    frame.notificationsAlpha,
+                    true,
+                    panels);
+            session.applyPageTransform(
+                    session.clockDateView,
+                    session.clockDateAnimView,
+                    frame.notificationsTranslationX,
+                    frame.notificationsAlpha,
+                    true,
+                    panels);
+
+            // 4. Keep shared header chrome stationary if displaced.
+            session.keepStationaryX(session.headerView, session.headerAnimView, panels);
+            session.keepStationaryX(session.plmnView, session.plmnAnimView, panels);
+            session.keepStationaryX(session.qsButtonsContainer, null, panels);
+
+            // Return directly without calling chain.proceed() so stock PanelTransitionAnimator.slide
+            // does not write its slideFraction or run its ±300px/±250px TouchAnimators on this frame.
+            return null;
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+            return chain.proceed();
+        }
+    }
+
+    private Object interceptSetSlideFraction(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread() || internalSlideFractionWrite) {
+            return chain.proceed();
+        }
+        Object adapter = chain.getThisObject();
+        HorizontalSwipeSession session = adapter != null ? adapterSessions.get(adapter) : null;
+        if (session != null && session.isActive()) {
+            float requested = ((Number) chain.getArg(0)).floatValue();
+            if (Math.abs(requested - HorizontalTransitionMath.COMPOSE_SLIDE_FRACTION_VISIBLE) > 0.0005f) {
+                if (!session.isComposeSlideFractionPinned()) {
+                    pinComposeSlideFractionOnce(session);
+                }
+                return null;
+            }
+        }
+        return chain.proceed();
+    }
+
+    private Object interceptStateChanged(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread()) {
+            return chain.proceed();
+        }
+        Object animator = chain.getThisObject();
+        HorizontalSwipeSession session = animator != null ? sessions.get(animator) : null;
+        if (session == null || !session.isActive()) {
+            // No horizontal swipe was active: leave ordinary shade/lockscreen transitions untouched.
+            return chain.proceed();
+        }
+
+        int newState;
+        float eventFraction;
+        try {
+            Object event = chain.getArg(0);
+            newState = panels.getEventState(event);
+            eventFraction = panels.getEventFraction(event);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+            return chain.proceed();
+        }
+
+        if (newState == HorizontalTransitionMath.TRANSITION_STATE) {
+            return chain.proceed();
+        }
+
+        // An active horizontal swipe is settling to QS_STATE (0), SHADE_STATE (1), or COMBINED_STATE (3).
+        // First restore the exact saved prior values on all touched views (including ancestors and
+        // ComposeView children), then run native onPanelTransitionStateChanged.
+        Object composeAdapter = session.composeAdapter;
+        Object slideFractionFlow = session.slideFractionFlow;
+        Object splitHelper = session.splitHelper;
+        try {
+            endSession(animator, session, newState, false);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+        }
+
+        Object result = chain.proceed();
+
+        if (!failed && (newState == HorizontalTransitionMath.QS_STATE
+                || newState == HorizontalTransitionMath.SHADE_STATE)) {
+            try {
+                // When a horizontal swipe cancels/reverses back to the starting page, eventFraction
+                // is 0.0f and stock onPanelTransitionStateChanged skips clearAnimationState().
+                if (eventFraction < 1.0f && !panels.isUserChanged(animator)) {
+                    panels.invokeClearAnimationState(animator);
+                    panels.invokeUpdatePanelVisibility(splitHelper);
+                }
+                writeComposeSlideFractionInternal(
+                        composeAdapter,
+                        slideFractionFlow,
+                        HorizontalTransitionMath.settledSlideFraction(newState));
+            } catch (ReflectiveOperationException | RuntimeException error) {
+                fail(error);
+            }
+        }
+        return result;
+    }
+
+    private Object interceptClearAnimationState(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread()) {
+            return chain.proceed();
+        }
+        Object animator = chain.getThisObject();
+        HorizontalSwipeSession session = animator != null ? sessions.get(animator) : null;
+        if (session == null || !session.isActive()) {
+            // No horizontal swipe was active: do not touch views during ordinary shade animations.
+            return chain.proceed();
+        }
+
+        try {
+            int state = panels.getTransitionState(animator);
+            endSession(animator, session, state, true);
+        } catch (ReflectiveOperationException | RuntimeException error) {
+            fail(error);
+        }
+        return chain.proceed();
+    }
+
+    private void pinComposeSlideFractionOnce(HorizontalSwipeSession session)
+            throws ReflectiveOperationException {
+        if (session.isComposeSlideFractionPinned()) {
+            return;
+        }
+        Float prior = panels.readComposeSlideFraction(session.slideFractionFlow);
+        session.markComposeSlideFractionPinned(prior);
+        writeComposeSlideFractionInternal(
+                session.composeAdapter,
+                session.slideFractionFlow,
+                HorizontalTransitionMath.COMPOSE_SLIDE_FRACTION_VISIBLE);
+    }
+
+    private void writeComposeSlideFractionInternal(
+            Object composeAdapter, Object slideFractionFlow, float targetFraction)
+            throws ReflectiveOperationException {
+        internalSlideFractionWrite = true;
+        try {
+            panels.writeComposeSlideFractionIfNeeded(composeAdapter, slideFractionFlow, targetFraction);
+        } finally {
+            internalSlideFractionWrite = false;
+        }
+    }
+
+    private void endSession(
+            Object animator,
+            HorizontalSwipeSession session,
+            int transitionState,
+            boolean restoreComposeSlideFraction)
+            throws ReflectiveOperationException {
+        Float priorSlideFraction = session.getSavedComposeSlideFraction();
+        Object composeAdapter = session.composeAdapter;
+        Object slideFractionFlow = session.slideFractionFlow;
+
+        session.restoreAndEnd(panels);
+        sessions.remove(animator);
+        if (composeAdapter != null) {
+            adapterSessions.remove(composeAdapter);
+        }
+
+        if (restoreComposeSlideFraction && composeAdapter != null) {
+            float target = (transitionState == HorizontalTransitionMath.QS_STATE
+                    || transitionState == HorizontalTransitionMath.SHADE_STATE)
+                    ? HorizontalTransitionMath.settledSlideFraction(transitionState)
+                    : (priorSlideFraction != null
+                            ? priorSlideFraction
+                            : HorizontalTransitionMath.COMPOSE_SLIDE_FRACTION_VISIBLE);
+            writeComposeSlideFractionInternal(composeAdapter, slideFractionFlow, target);
+        }
+    }
+
+    private void fail(Throwable error) {
+        if (!failed) {
+            failed = true;
+            for (HorizontalSwipeSession session : sessions.values()) {
+                if (session != null && session.isActive()) {
+                    try {
+                        session.restoreAndEnd(panels);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            sessions.clear();
+            adapterSessions.clear();
+            module.warn("Horizontal panel transition hooks disabled until SystemUI restarts: unexpected contract failure", error);
+        }
+    }
+
+    private static boolean mainThread() {
+        return Looper.myLooper() == Looper.getMainLooper();
+    }
+}
