@@ -98,10 +98,19 @@
       ]
     },
     "Lcom/android/systemui/statusbar/notification/row/ActivatableNotificationView;": {
-      "fields": {},
+      "fields": {
+        "mBlurAlpha": "F",
+        "mBlurAlphaFromParent": "F",
+        "mContentAlpha": "F",
+        "mDrawingAppearAnimation": "Z"
+      },
       "methods": [
         {
           "name": "setBlurAlphaFromParent",
+          "descriptor": "(F)V"
+        },
+        {
+          "name": "updateBlurDrawableAlpha",
           "descriptor": "(F)V"
         }
       ]

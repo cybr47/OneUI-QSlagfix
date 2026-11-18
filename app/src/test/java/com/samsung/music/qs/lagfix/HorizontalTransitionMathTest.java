@@ -1,5 +1,6 @@
 package com.samsung.music.qs.lagfix;
 
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -10,13 +11,14 @@ import com.samsung.music.qs.lagfix.HorizontalTransitionMath.FrameTransform;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
-import java.util. Set;
+import java.util.Set;
 import org.junit.Test;
 
 /**
  * Unit tests verifying the GlassUI-style horizontal transition math, eased {@code 50%} fade curve,
- * {@link HorizontalSwipeSession} lifecycle, nested notification blur-alpha protection, and
- * {@link ShadeSwitchPrefs} Remote Preferences commit verification on the {@code cust} branch.
+ * single-pass notification card blur-alpha fading, {@link HorizontalSwipeSession} lifecycle,
+ * {@link ShadeSwitchPrefs} Remote Preferences commit verification, and settings inset padding on
+ * the {@code cust} branch.
  */
 public final class HorizontalTransitionMathTest {
     private static final float EPS = 1e-4f;
@@ -547,27 +549,76 @@ public final class HorizontalTransitionMathTest {
     }
 
     @Test
-    public void nestedNotificationBlurAlphaStaysAt1DuringHorizontalSwipeAndRestoresWhenInactive() {
+    public void notificationBlurAlphaFollowsOutgoingFadeOnceAndPreservesExistingRowOpacity() {
+        // 1. Full-opacity notification rows (both ordinary cards and the large media card) fade
+        //    their BackgroundBlurDrawable in exact lockstep with their Canvas content along the
+        //    50% eased curve (reaching 0 at 50% drag and restoring along the same curve on reversal).
         assertEquals(
                 1.0f,
-                HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(true, 0.65625f),
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.0f), 1.0f),
                 EPS);
         assertEquals(
-                1.0f,
-                HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(true, 0.17568f),
+                0.65625f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.25f), 1.0f),
                 EPS);
         assertEquals(
-                1.0f,
-                HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(true, 0.0f),
+                0.17568f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.40f), 1.0f),
                 EPS);
         assertEquals(
                 0.0f,
-                HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(false, 0.0f),
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.50f), 1.0f),
                 EPS);
         assertEquals(
-                1.0f,
-                HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(false, 1.0f),
+                0.0f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.75f), 1.0f),
                 EPS);
+
+        // 2. Pre-dimmed or partially transparent rows (e.g. rowAlpha = 0.60f) preserve their
+        //    existing opacity and have the page fade applied once (parentAlpha * rowAlpha).
+        float rowAlpha = 0.60f;
+        assertEquals(
+                0.60f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.0f), rowAlpha),
+                EPS);
+        assertEquals(
+                0.65625f * rowAlpha,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.25f), rowAlpha),
+                EPS);
+        assertEquals(
+                0.17568f * rowAlpha,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.40f), rowAlpha),
+                EPS);
+        assertEquals(
+                0.0f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.50f), rowAlpha),
+                EPS);
+
+        // 3. Appear-animation contentAlpha is also respected when drawingAppearAnimation is true.
+        assertEquals(
+                0.65625f * 0.50f,
+                HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                        HorizontalTransitionMath.outgoingAlpha(0.25f), 1.0f, true, 0.50f),
+                EPS);
+    }
+
+    @Test
+    public void settingsContentPaddingAppliesSystemBarAndCutoutInsetsOnce() {
+        int[] pad1 = ShadeSwitchSettingsActivity.computeContentPadding(
+                40, 48, 40, 48, 0, 96, 0, 64);
+        int[] pad2 = ShadeSwitchSettingsActivity.computeContentPadding(
+                40, 48, 40, 48, 0, 96, 0, 64);
+        assertArrayEquals(new int[]{40, 144, 40, 112}, pad1);
+        assertArrayEquals(pad1, pad2);
     }
 
     @Test

@@ -1,8 +1,10 @@
 package com.samsung.music.qs.lagfix;
 
+import android.app.ActionBar;
 import android.app.Activity;
 import android.content.SharedPreferences;
 import android.content.res.Configuration;
+import android.graphics.Insets;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
@@ -10,6 +12,8 @@ import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowInsets;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
@@ -26,6 +30,13 @@ import io.github.libxposed.service.XposedServiceHelper;
  *
  * <p>Guarantees:
  * <ul>
+ *   <li>Uses an activity-scoped no-action-bar theme ({@code Theme.DeviceDefault.NoActionBar}) and
+ *       requests {@link Window#FEATURE_NO_TITLE} so only the single in-content {@code ShadeSwitch}
+ *       title is rendered above the switch card.
+ *   <li>Applies {@link WindowInsets.Type#systemBars()} and
+ *       {@link WindowInsets.Type#displayCutout()} insets once on the content container without
+ *       accumulating padding across repeated inset passes, and keeps the full switch row label and
+ *       summary visible at larger font sizes.
  *   <li>The switch and its clickable row start <b>disabled</b> and are enabled only after
  *       {@link XposedServiceHelper} binds to LSPosed's {@link XposedService} and the remote
  *       preference has loaded off the main thread.
@@ -39,7 +50,6 @@ import io.github.libxposed.service.XposedServiceHelper;
  * </ul>
  */
 public final class ShadeSwitchSettingsActivity extends Activity {
-    private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
     private static final ExecutorService PREFS_EXECUTOR =
             Executors.newSingleThreadExecutor(runnable -> {
                 Thread thread = new Thread(runnable, "ShadeSwitch-RemotePrefs");
@@ -58,7 +68,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
                     boundService = service;
                     ShadeSwitchSettingsActivity activity = activeActivity;
                     if (activity != null) {
-                        MAIN_HANDLER.post(() -> activity.loadRemotePreferencesAsync(service));
+                        activity.mainHandler.post(() -> activity.loadRemotePreferencesAsync(service));
                     }
                 }
 
@@ -69,11 +79,12 @@ public final class ShadeSwitchSettingsActivity extends Activity {
                     }
                     ShadeSwitchSettingsActivity activity = activeActivity;
                     if (activity != null) {
-                        MAIN_HANDLER.post(activity::onXposedServiceDied);
+                        activity.mainHandler.post(activity::onXposedServiceDied);
                     }
                 }
             };
 
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences remotePrefs;
     private boolean remotePrefsLoaded;
     private LinearLayout switchCard;
@@ -87,7 +98,12 @@ public final class ShadeSwitchSettingsActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
         super.onCreate(savedInstanceState);
+        ActionBar actionBar = getActionBar();
+        if (actionBar != null) {
+            actionBar.hide();
+        }
         activeActivity = this;
 
         buildContentView();
@@ -110,6 +126,27 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         super.onDestroy();
     }
 
+    /**
+     * Computes the content container's Left/Top/Right/Bottom padding by adding the non-negative
+     * {@code systemBars() | displayCutout()} insets to the base content padding exactly once.
+     */
+    static int[] computeContentPadding(
+            int baseLeft,
+            int baseTop,
+            int baseRight,
+            int baseBottom,
+            int insetLeft,
+            int insetTop,
+            int insetRight,
+            int insetBottom) {
+        return new int[]{
+            baseLeft + Math.max(0, insetLeft),
+            baseTop + Math.max(0, insetTop),
+            baseRight + Math.max(0, insetRight),
+            baseBottom + Math.max(0, insetBottom)
+        };
+    }
+
     private static synchronized void ensureServiceListenerRegistered() {
         if (!listenerRegistered) {
             listenerRegistered = true;
@@ -127,18 +164,18 @@ public final class ShadeSwitchSettingsActivity extends Activity {
             try {
                 SharedPreferences prefs = service.getRemotePreferences(ShadeSwitchPrefs.PREFS_GROUP);
                 if (prefs == null) {
-                    MAIN_HANDLER.post(() -> onRemotePreferencesLoadFailed(
+                    mainHandler.post(() -> onRemotePreferencesLoadFailed(
                             token, getString(R.string.lsposed_prefs_load_failed)));
                     return;
                 }
                 boolean value = ShadeSwitchPrefs.readVerticalSwipe(prefs);
-                MAIN_HANDLER.post(() -> onRemotePreferencesLoaded(token, service, prefs, value));
+                mainHandler.post(() -> onRemotePreferencesLoaded(token, service, prefs, value));
             } catch (Throwable error) {
                 String detail = error.getMessage();
                 String message = (detail != null && !detail.isEmpty())
                         ? getString(R.string.lsposed_prefs_load_failed) + " (" + detail + ")"
                         : getString(R.string.lsposed_prefs_load_failed);
-                MAIN_HANDLER.post(() -> onRemotePreferencesLoadFailed(token, message));
+                mainHandler.post(() -> onRemotePreferencesLoadFailed(token, message));
             }
         });
     }
@@ -199,7 +236,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         PREFS_EXECUTOR.execute(() -> {
             ShadeSwitchPrefs.SaveResult result =
                     ShadeSwitchPrefs.commitVerticalSwipe(prefsSnapshot, desiredValue, previousConfirmed);
-            MAIN_HANDLER.post(() -> onVerticalSwipeCommitted(token, result));
+            mainHandler.post(() -> onVerticalSwipeCommitted(token, result));
         });
     }
 
@@ -269,23 +306,58 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         accentTextColor = night ? 0xFF8AB4F8 : 0xFF1A73E8;
         errorTextColor = night ? 0xFFF28B82 : 0xFFD93025;
 
+        Window window = getWindow();
+        if (window != null) {
+            window.setStatusBarColor(pageBg);
+            window.setNavigationBarColor(pageBg);
+        }
+
         ScrollView scrollView = new ScrollView(this);
         scrollView.setFillViewport(true);
+        scrollView.setClipToPadding(false);
         scrollView.setBackgroundColor(pageBg);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        int padH = dp(20);
-        int padV = dp(24);
-        root.setPadding(padH, padV, padH, padV);
-        scrollView.addView(root);
+        final int basePadH = dp(20);
+        final int basePadV = dp(24);
+        root.setPadding(basePadH, basePadV, basePadH, basePadV);
+        scrollView.addView(
+                root,
+                new ScrollView.LayoutParams(
+                        ScrollView.LayoutParams.MATCH_PARENT,
+                        ScrollView.LayoutParams.WRAP_CONTENT));
+
+        // Apply system-bar and display-cutout insets once to root's base padding so the single
+        // in-content title and switch card always sit cleanly below the status bar / cutout.
+        scrollView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+            Insets insets = windowInsets.getInsets(
+                    WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+            int[] pad = computeContentPadding(
+                    basePadH,
+                    basePadV,
+                    basePadH,
+                    basePadV,
+                    insets.left,
+                    insets.top,
+                    insets.right,
+                    insets.bottom);
+            root.setPadding(pad[0], pad[1], pad[2], pad[3]);
+            return WindowInsets.CONSUMED;
+        });
 
         TextView headerTitle = new TextView(this);
         headerTitle.setText(R.string.app_name);
         headerTitle.setTextColor(primaryText);
         headerTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
         headerTitle.getPaint().setFakeBoldText(true);
-        root.addView(headerTitle);
+        headerTitle.setSingleLine(false);
+        headerTitle.setIncludeFontPadding(true);
+        root.addView(
+                headerTitle,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
 
         switchCard = new LinearLayout(this);
         switchCard.setOrientation(LinearLayout.HORIZONTAL);
@@ -318,12 +390,20 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         switchTitle.setTextColor(primaryText);
         switchTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         switchTitle.getPaint().setFakeBoldText(true);
-        textColumn.addView(switchTitle);
+        switchTitle.setSingleLine(false);
+        switchTitle.setIncludeFontPadding(true);
+        textColumn.addView(
+                switchTitle,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
 
         TextView switchSummary = new TextView(this);
         switchSummary.setText(R.string.vertical_swipe_summary);
         switchSummary.setTextColor(secondaryText);
         switchSummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        switchSummary.setSingleLine(false);
+        switchSummary.setIncludeFontPadding(true);
         LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT);
@@ -353,6 +433,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         noticeView.setText(R.string.lsposed_service_waiting);
         noticeView.setTextColor(accentTextColor);
         noticeView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        noticeView.setSingleLine(false);
         noticeView.setVisibility(View.VISIBLE);
         LinearLayout.LayoutParams noticeParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
@@ -362,6 +443,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         root.addView(noticeView, noticeParams);
 
         setContentView(scrollView);
+        scrollView.requestApplyInsets();
     }
 
     private int dp(int value) {

@@ -56,6 +56,10 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
     private final Field eventState;
     private final Field eventFraction;
 
+    private final Field notifBlurAlphaFromParent;
+    private final Field notifDrawingAppearAnimation;
+    private final Field notifContentAlpha;
+
     private final Object leftDirection;
     private final Object rightDirection;
     private final Class<?> composeViewType;
@@ -85,9 +89,6 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         clearAnimationState = method(animatorType, "clearAnimationState");
         onPanelClosed = optionalMethod(animatorType, "onPanelClosed$1");
         setSlideFraction = method(composeAdapterType, "setSlideFraction", float.class);
-        setBlurAlphaFromParent = activatableNotificationViewType != null
-                ? optionalMethod(activatableNotificationViewType, "setBlurAlphaFromParent", float.class)
-                : null;
 
         isThereNoView = method(animatorType, "isThereNoView");
         animViewGetView = method(animViewType, "getView");
@@ -127,6 +128,18 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
 
         eventState = field(eventType, "state");
         eventFraction = field(eventType, "fraction");
+
+        notifBlurAlphaFromParent = optionalField(
+                activatableNotificationViewType, "mBlurAlphaFromParent", float.class);
+        notifDrawingAppearAnimation = optionalField(
+                activatableNotificationViewType, "mDrawingAppearAnimation", boolean.class);
+        notifContentAlpha = optionalField(activatableNotificationViewType, "mContentAlpha", float.class);
+        // Samsung reuses the stored parent alpha when a row changes opacity. Only replace the
+        // setter argument if we can read the row state and restore the original parent value.
+        setBlurAlphaFromParent = notifBlurAlphaFromParent != null
+                && notifDrawingAppearAnimation != null && notifContentAlpha != null
+                ? optionalMethod(activatableNotificationViewType, "setBlurAlphaFromParent", float.class)
+                : null;
 
         leftDirection = field(directionType, "LEFT").get(null);
         rightDirection = field(directionType, "RIGHT").get(null);
@@ -177,6 +190,38 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
 
     Object getComposeAdapter(Object animator) throws IllegalAccessException {
         return composeAdapter.get(animator);
+    }
+
+    boolean isDrawingAppearAnimation(Object notificationView) {
+        if (notifDrawingAppearAnimation == null || notificationView == null) {
+            return false;
+        }
+        try {
+            return notifDrawingAppearAnimation.getBoolean(notificationView);
+        } catch (IllegalAccessException ignored) {
+            return false;
+        }
+    }
+
+    float getNotificationContentAlpha(Object notificationView) {
+        if (notifContentAlpha == null || notificationView == null) {
+            return 1.0f;
+        }
+        try {
+            return notifContentAlpha.getFloat(notificationView);
+        } catch (IllegalAccessException ignored) {
+            return 1.0f;
+        }
+    }
+
+    void restoreRawBlurAlphaFromParent(Object notificationView, float rawParentAlpha) {
+        if (notifBlurAlphaFromParent == null || notificationView == null) {
+            return;
+        }
+        try {
+            notifBlurAlphaFromParent.setFloat(notificationView, rawParentAlpha);
+        } catch (IllegalAccessException ignored) {
+        }
     }
 
     /**
@@ -448,6 +493,18 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         Field value = type.getDeclaredField(name);
         value.setAccessible(true);
         return value;
+    }
+
+    private static Field optionalField(Class<?> type, String name, Class<?> expectedType) {
+        if (type == null) {
+            return null;
+        }
+        try {
+            Field value = field(type, name);
+            return value.getType() == expectedType ? value : null;
+        } catch (NoSuchFieldException | SecurityException ignored) {
+            return null;
+        }
     }
 
     private static Method method(Class<?> type, String name, Class<?>... args)

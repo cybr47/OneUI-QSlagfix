@@ -47,9 +47,6 @@ public final class HorizontalTransitionMath {
     /** Compose {@code slideFraction} value when Quick Settings is hidden in settled Shade state. */
     public static final float COMPOSE_SLIDE_FRACTION_HIDDEN = 1.0f;
 
-    /** Blur alpha passed to child {@code ActivatableNotificationView}s during a horizontal drag. */
-    public static final float NESTED_NOTIFICATION_BLUR_ALPHA_ACTIVE = 1.0f;
-
     private HorizontalTransitionMath() {
     }
 
@@ -127,23 +124,53 @@ public final class HorizontalTransitionMath {
     }
 
     /**
-     * Returns the blur alpha to pass to nested {@code ActivatableNotificationView.setBlurAlphaFromParent(float)}
-     * calls inside {@code NotificationStackScrollLayout.setAlpha(float)}.
-     *
-     * <p>In One UI 9, {@code NotificationStackScrollLayout.setAlpha(v)} sets both the parent
-     * {@code ViewGroup} hardware-layer alpha ({@code super.setAlpha(v)}) and loops over every child
-     * {@code ActivatableNotificationView} to call {@code setBlurAlphaFromParent(v)}. If both run during
-     * a horizontal fade, each notification card's blur background opacity is multiplied by {@code v}
-     * a second time ({@code v * v}), making outgoing notifications lose opacity prematurely. Pinning
-     * child blur alpha to {@code 1.0f} while a horizontal swipe is active lets the parent container's
-     * single eased opacity curve govern the entire Notifications panel uniformly.
+     * Computes a notification row's own baseline opacity before the parent page fade is applied,
+     * preserving both {@code row.getAlpha()} and (when {@code drawingAppearAnimation} is active)
+     * {@code mContentAlpha}.
      */
-    public static float effectiveNestedNotificationBlurAlpha(
-            boolean activeHorizontalSwipe, float requestedAlpha) {
-        if (activeHorizontalSwipe) {
-            return NESTED_NOTIFICATION_BLUR_ALPHA_ACTIVE;
+    public static float rowOwnBlurAlpha(
+            float rowAlpha, boolean drawingAppearAnimation, float contentAlpha) {
+        float own = clamp01(rowAlpha);
+        if (drawingAppearAnimation) {
+            own = Math.min(own, clamp01(contentAlpha));
         }
-        return clamp01(requestedAlpha);
+        return own;
+    }
+
+    /**
+     * Returns the effective blur alpha for an {@code ActivatableNotificationView} card background
+     * given the parent {@code NotificationStackScrollLayout} alpha and the row's own opacity.
+     *
+     * <p>In One UI 9 ({@code NotiRune.NOTI_STYLE_ENR_WINDOW_BLUR == true}),
+     * {@code NotificationStackScrollLayout.setAlpha(v)} sets the container's {@code ViewGroup}
+     * layer alpha ({@code super.setAlpha(v)}), which fades all Canvas-drawn notification content
+     * (text, icons, media controls, and non-blur drawables) once by {@code v * rowAlpha}. However,
+     * each notification card's rounded dark blur background (both ordinary notification rows and
+     * standard media notification cards) is a window-level {@code BackgroundBlurDrawable} on
+     * {@code mBackgroundNormal} that is NOT drawn into the {@code ViewGroup} Canvas layer and does
+     * not inherit {@code super.setAlpha(v)}. Its opacity is controlled solely via
+     * {@code setBlurAlphaFromParent(v)} -&gt; {@code updateBlurDrawableAlpha(alpha)} -&gt;
+     * {@code BackgroundBlurDrawable.setAlpha((int) (alpha * 255f))}.
+     *
+     * <p>Multiplying {@code parentAlpha} by the row's own opacity applies the page fade
+     * <b>exactly once</b> to the blur background path while preserving any partial opacity the row
+     * already has (whereas stock {@code Math.min(parentAlpha, rowAlpha)} would hold a pre-dimmed
+     * row's background constant until {@code parentAlpha} dropped below {@code rowAlpha}).
+     */
+    public static float effectiveNotificationBlurAlpha(
+            float parentAlpha,
+            float rowAlpha,
+            boolean drawingAppearAnimation,
+            float contentAlpha) {
+        return clamp01(clamp01(parentAlpha) * rowOwnBlurAlpha(rowAlpha, drawingAppearAnimation, contentAlpha));
+    }
+
+    /**
+     * Convenience overload for {@link #effectiveNotificationBlurAlpha(float, float, boolean, float)}
+     * when no appear animation is active on the row.
+     */
+    public static float effectiveNotificationBlurAlpha(float parentAlpha, float rowAlpha) {
+        return effectiveNotificationBlurAlpha(parentAlpha, rowAlpha, false, 1.0f);
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.samsung.music.qs.lagfix;
 
 import android.os.Looper;
+import android.view.View;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
@@ -25,16 +26,22 @@ import io.github.libxposed.api.XposedInterface;
  *       {@code 1f - fraction} or {@code fraction} to {@code composeAdapter.setSlideFraction} and
  *       step stock's {@code ±300px}/{@code ±250px} {@code TouchAnimator}s). Instead,
  *       {@code setSlideFraction(0f)} is written at most once when the horizontal swipe begins.
- *   <li><b>No nested second-alpha or mid-drag visibility drop</b>:
+ *   <li><b>Single-pass page fade across both Canvas content and window-blur card backgrounds</b>:
  *       <ul>
  *         <li>Pinning {@code SecQSPanelComposeAdapter.setSlideFraction(0f)} keeps Compose
  *             {@code alphaOfScene}, {@code alphaOfBlurTileBackground}, and {@code alphaOfSlide} at
  *             {@code 1.0f} so {@code qsRootView.setAlpha(frame.qsAlpha)} is the sole opacity curve
  *             on Quick Settings.
- *         <li>Hooking {@code ActivatableNotificationView.setBlurAlphaFromParent(float)} keeps child
- *             notification card blur drawables at {@code 1.0f} while a horizontal swipe is active so
- *             {@code NotificationStackScrollLayout.setAlpha(frame.notificationsAlpha)} does not
- *             square the fade ({@code alpha * alpha}) on child notification cards.
+ *         <li>In One UI 9 ({@code NotiRune.NOTI_STYLE_ENR_WINDOW_BLUR}),
+ *             {@code NotificationStackScrollLayout.setAlpha(v)} sets the {@code ViewGroup} layer
+ *             alpha ({@code super.setAlpha(v)}) for Canvas-drawn text, icons, and media controls,
+ *             and calls {@code ActivatableNotificationView.setBlurAlphaFromParent(v)} for each
+ *             card's window-level {@code BackgroundBlurDrawable} (which does not inherit the
+ *             {@code ViewGroup} Canvas layer alpha). {@link #interceptSetBlurAlphaFromParent}
+ *             computes {@code parentAlpha * rowOwnAlpha} via
+ *             {@link HorizontalTransitionMath#effectiveNotificationBlurAlpha(float, float, boolean, float)}
+ *             so both ordinary notification cards and the large media card fade their rounded
+ *             backgrounds in lockstep with their contents while preserving any existing row opacity.
  *         <li>Skipping redundant per-frame {@code onPanelTransitionStateChanged(TRANSITION_STATE)}
  *             callbacks (emitted by {@code SecPanelSplitHelper.setDraggedFraction} on each drag
  *             frame) prevents mid-drag visibility/alpha churn on {@code buttonContainer} and
@@ -247,12 +254,27 @@ final class HorizontalPanelTransitionHooks {
         if (failed || !mainThread() || activeSessionCount <= 0) {
             return chain.proceed();
         }
-        float requested = ((Number) chain.getArg(0)).floatValue();
-        float effective = HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(true, requested);
-        if (Math.abs(requested - effective) <= 0.0005f) {
+        Object viewObj = chain.getThisObject();
+        if (!(viewObj instanceof View rowView)) {
             return chain.proceed();
         }
-        return chain.proceed(new Object[]{effective});
+        float parentAlpha = HorizontalTransitionMath.clamp01(((Number) chain.getArg(0)).floatValue());
+        float rowAlpha = rowView.getAlpha();
+        boolean drawingAppear = panels.isDrawingAppearAnimation(viewObj);
+        float contentAlpha = drawingAppear ? panels.getNotificationContentAlpha(viewObj) : 1.0f;
+        float effective = HorizontalTransitionMath.effectiveNotificationBlurAlpha(
+                parentAlpha, rowAlpha, drawingAppear, contentAlpha);
+        if (Math.abs(parentAlpha - effective) <= 0.0005f) {
+            return chain.proceed();
+        }
+        try {
+            return chain.proceed(new Object[]{effective});
+        } finally {
+            // Keep mBlurAlphaFromParent at the unmultiplied parentAlpha so subsequent calls to
+            // ActivatableNotificationView.setAlpha(rowAlpha) -> setBlurAlphaFromParent(mBlurAlphaFromParent)
+            // never multiply rowAlpha a second time.
+            panels.restoreRawBlurAlphaFromParent(viewObj, parentAlpha);
+        }
     }
 
     private Object interceptStateChanged(XposedInterface.Chain chain) throws Throwable {
