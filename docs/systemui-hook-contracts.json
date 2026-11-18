@@ -149,7 +149,8 @@
         "isQsDisabled": "Z",
         "isShadeDisabled": "Z",
         "secQsUiDisplayModeInteractor": "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;",
-        "composeAdapter": "Lcom/android/systemui/samsung/quicksetting/SecQSPanelComposeAdapter;"
+        "composeAdapter": "Lcom/android/systemui/samsung/quicksetting/SecQSPanelComposeAdapter;",
+        "isEnabled": "Z"
       },
       "methods": [
         {
@@ -167,7 +168,14 @@
         {
           "name": "isReversed",
           "descriptor": "()Z"
+        },
+        {
+          "name": "setEnabled$1",
+          "descriptor": "(Z)V"
         }
+      ],
+      "static_fields": [
+        "isEnabled"
       ]
     },
     "Lcom/android/systemui/shade/PanelSlideEventHandler;": {
@@ -258,6 +266,46 @@
         {
           "name": "getValue",
           "descriptor": "()Ljava/lang/Object;"
+        }
+      ]
+    },
+    "Lcom/android/systemui/qs/QSPanelHost;": {
+      "fields": {
+        "mTileLayout": "Lcom/android/systemui/qs/TileLayout;",
+        "mQsHost": "Lcom/android/systemui/qs/QSHost;"
+      },
+      "methods": [
+        {
+          "name": "setTiles",
+          "descriptor": "(Ljava/lang/Boolean;)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/qs/QuickQSHostAdapter;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "getTiles",
+          "descriptor": "()Ljava/util/Collection;"
+        }
+      ]
+    },
+    "Lcom/android/systemui/qs/TileLayout;": {
+      "fields": {
+        "mColumns": "I"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/qs/SecHeaderTileLayout;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "onMeasure",
+          "descriptor": "(II)V"
+        },
+        {
+          "name": "onLayout",
+          "descriptor": "(ZIIII)V"
         }
       ]
     }

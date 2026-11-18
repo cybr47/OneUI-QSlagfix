@@ -5,7 +5,7 @@ import android.util.Log;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * Module entry point for the {@code cust} branch of ShadeSwitch ({@code cybr47/OneUI-QSlagfix}).
+ * Module entry point for ShadeSwitch.
  *
  * <p>Reads the {@link ShadeSwitchPrefs#KEY_VERTICAL_SWIPE} Remote Preference at SystemUI startup
  * and installs <b>only</b> the selected mode's hooks:
@@ -16,7 +16,7 @@ import io.github.libxposed.api.XposedModule;
  *       restoring the vertical header drag (including the expanded clock/date/button-row hit area
  *       and lockscreen shade support) and disabling horizontal panel switching.
  * </ul>
- * Media-wave coarsening hooks remain omitted in both modes.
+ * The compact tile row in Together style has its own preference.
  */
 public final class SamsungMusicWavesHook extends XposedModule {
     private boolean targetProcess;
@@ -46,7 +46,8 @@ public final class SamsungMusicWavesHook extends XposedModule {
             return;
         }
         installed = true;
-        boolean verticalSwipe = readVerticalSwipePreference();
+        boolean verticalSwipe = readPreference(ShadeSwitchPrefs.KEY_VERTICAL_SWIPE);
+        boolean hideQuickQsRow = readPreference(ShadeSwitchPrefs.KEY_HIDE_QUICK_QS_ROW);
         if (BuildConfig.DEBUG) {
             debug("SystemUI package ready: installing hooks (verticalSwipe=" + verticalSwipe + ")", null);
         }
@@ -60,20 +61,21 @@ public final class SamsungMusicWavesHook extends XposedModule {
         } else {
             HorizontalPanelTransitionHooks.install(this, loader);
         }
+        if (hideQuickQsRow) {
+            TogetherQuickQsHooks.install(this, loader);
+        }
     }
 
-    private boolean readVerticalSwipePreference() {
+    private boolean readPreference(String key) {
         try {
             SharedPreferences prefs = getRemotePreferences(ShadeSwitchPrefs.PREFS_GROUP);
             if (prefs != null) {
-                return prefs.getBoolean(
-                        ShadeSwitchPrefs.KEY_VERTICAL_SWIPE,
-                        ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE);
+                return prefs.getBoolean(key, false);
             }
         } catch (Throwable error) {
-            warn("Unable to read remote preferences; defaulting to horizontal swipe mode", error);
+            warn("Unable to read remote preference " + key, error);
         }
-        return ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE;
+        return false;
     }
 
     /** Verbose diagnostics: debug builds only. */

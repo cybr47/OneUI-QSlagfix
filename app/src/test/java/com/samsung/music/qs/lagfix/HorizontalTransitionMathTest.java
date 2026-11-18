@@ -622,6 +622,21 @@ public final class HorizontalTransitionMathTest {
     }
 
     @Test
+    public void togetherRowPreferenceIsIndependentOfSwipeMode() {
+        FakeRemotePrefs prefs = new FakeRemotePrefs();
+        String key = ShadeSwitchPrefs.KEY_HIDE_QUICK_QS_ROW;
+        assertTrue(ShadeSwitchPrefs.commitVerticalSwipe(prefs, true, false).success);
+        assertFalse(prefs.getBoolean(key, false));
+        assertTrue(ShadeSwitchPrefs.commitBoolean(prefs, key, true, false).success);
+        assertTrue(ShadeSwitchPrefs.commitVerticalSwipe(prefs, false, true).success);
+        assertTrue(prefs.getBoolean(key, false));
+        prefs.commitSucceeds = false;
+        assertFalse(ShadeSwitchPrefs.commitBoolean(prefs, key, false, true).success);
+        assertTrue(prefs.getBoolean(key, false));
+        assertFalse(ShadeSwitchPrefs.readVerticalSwipe(prefs));
+    }
+
+    @Test
     public void shadeSwitchRemotePreferencesCommitVerifiesWriteAndRevertsOnFailure() {
         assertFalse(ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE);
         assertEquals("Vertical swipe to switch panels", ShadeSwitchPrefs.SWITCH_TITLE);

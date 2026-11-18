@@ -20,6 +20,9 @@ public final class ShadeSwitchPrefs {
      */
     public static final String KEY_VERTICAL_SWIPE = "vertical_swipe_to_switch_panels";
 
+    /** Hides the compact tile row on Samsung's Together notification panel. */
+    public static final String KEY_HIDE_QUICK_QS_ROW = "hide_quick_qs_row";
+
     /** Off ({@code false}) by default: selects the improved horizontal swipe with eased 50% fade. */
     public static final boolean DEFAULT_VERTICAL_SWIPE = false;
 
@@ -53,7 +56,7 @@ public final class ShadeSwitchPrefs {
     }
 
     /**
-     * Result of reading or writing the {@link #KEY_VERTICAL_SWIPE} Remote Preference.
+     * Result of writing a switch to Remote Preferences.
      */
     public static final class SaveResult {
         public final boolean success;
@@ -77,17 +80,23 @@ public final class ShadeSwitchPrefs {
         return remotePrefs.getBoolean(KEY_VERTICAL_SWIPE, DEFAULT_VERTICAL_SWIPE);
     }
 
+    public static SaveResult commitVerticalSwipe(
+            SharedPreferences remotePrefs, boolean desiredValue, boolean previousValue) {
+        return commitBoolean(remotePrefs, KEY_VERTICAL_SWIPE, desiredValue, previousValue);
+    }
+
     /**
      * Synchronously commits {@code desiredValue} to {@code remotePrefs} via
      * {@link SharedPreferences.Editor#commit()}, verifies the committed value, and restores
      * {@code previousValue} in memory if the remote commit failed.
      *
      * @param remotePrefs   connected libxposed RemotePreferences instance (may be null if disconnected)
+     * @param key           remote preference to update
      * @param desiredValue  new switch state requested by the user
      * @param previousValue switch state prior to the toggle, restored if the remote write fails
      */
-    public static SaveResult commitVerticalSwipe(
-            SharedPreferences remotePrefs, boolean desiredValue, boolean previousValue) {
+    static SaveResult commitBoolean(
+            SharedPreferences remotePrefs, String key, boolean desiredValue, boolean previousValue) {
         if (remotePrefs == null) {
             return new SaveResult(false, previousValue, SERVICE_DISCONNECTED_NOTICE);
         }
@@ -96,7 +105,7 @@ public final class ShadeSwitchPrefs {
             if (editor == null) {
                 return new SaveResult(false, previousValue, SAVE_FAILED_NOTICE);
             }
-            boolean committed = editor.putBoolean(KEY_VERTICAL_SWIPE, desiredValue).commit();
+            boolean committed = editor.putBoolean(key, desiredValue).commit();
             if (!committed) {
                 // In libxposed RemotePreferences.Editor.commit(), doUpdate() mutates the local map
                 // before doCommit() calls IXposedService.updateRemotePreferences(). Roll back the
@@ -104,13 +113,13 @@ public final class ShadeSwitchPrefs {
                 try {
                     SharedPreferences.Editor rollback = remotePrefs.edit();
                     if (rollback != null) {
-                        rollback.putBoolean(KEY_VERTICAL_SWIPE, previousValue).commit();
+                        rollback.putBoolean(key, previousValue).commit();
                     }
                 } catch (Throwable ignored) {
                 }
                 return new SaveResult(false, previousValue, SAVE_FAILED_NOTICE);
             }
-            boolean readBack = remotePrefs.getBoolean(KEY_VERTICAL_SWIPE, !desiredValue);
+            boolean readBack = remotePrefs.getBoolean(key, !desiredValue);
             if (readBack != desiredValue) {
                 return new SaveResult(false, readBack, SAVE_FAILED_NOTICE);
             }

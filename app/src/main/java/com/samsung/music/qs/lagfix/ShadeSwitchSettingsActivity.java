@@ -87,14 +87,33 @@ public final class ShadeSwitchSettingsActivity extends Activity {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private SharedPreferences remotePrefs;
     private boolean remotePrefsLoaded;
-    private LinearLayout switchCard;
-    private Switch verticalSwipeSwitch;
+    private ToggleRow verticalSwipe;
+    private ToggleRow hideQuickQs;
     private TextView noticeView;
-    private boolean confirmedValue = ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE;
     private boolean updatingUi;
     private int operationToken;
     private int accentTextColor;
     private int errorTextColor;
+
+    private static final class ToggleRow {
+        final String key;
+        final LinearLayout card;
+        final Switch toggle;
+        boolean confirmed;
+
+        ToggleRow(String key, LinearLayout card, Switch toggle) {
+            this.key = key;
+            this.card = card;
+            this.toggle = toggle;
+        }
+
+        void setInteractive(boolean enabled) {
+            toggle.setEnabled(enabled);
+            card.setEnabled(enabled);
+            card.setClickable(enabled);
+            card.setAlpha(enabled ? 1.0f : 0.55f);
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -107,7 +126,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         activeActivity = this;
 
         buildContentView();
-        setSwitchInteractive(false);
+        setSwitchesInteractive(false);
         showNotice(getString(R.string.lsposed_service_waiting), false, false);
 
         ensureServiceListenerRegistered();
@@ -159,7 +178,7 @@ public final class ShadeSwitchSettingsActivity extends Activity {
             return;
         }
         final int token = ++operationToken;
-        setSwitchInteractive(false);
+        setSwitchesInteractive(false);
         PREFS_EXECUTOR.execute(() -> {
             try {
                 SharedPreferences prefs = service.getRemotePreferences(ShadeSwitchPrefs.PREFS_GROUP);
@@ -168,8 +187,9 @@ public final class ShadeSwitchSettingsActivity extends Activity {
                             token, getString(R.string.lsposed_prefs_load_failed)));
                     return;
                 }
-                boolean value = ShadeSwitchPrefs.readVerticalSwipe(prefs);
-                mainHandler.post(() -> onRemotePreferencesLoaded(token, service, prefs, value));
+                boolean vertical = ShadeSwitchPrefs.readVerticalSwipe(prefs);
+                boolean hideRow = prefs.getBoolean(ShadeSwitchPrefs.KEY_HIDE_QUICK_QS_ROW, false);
+                mainHandler.post(() -> onRemotePreferencesLoaded(token, service, prefs, vertical, hideRow));
             } catch (Throwable error) {
                 String detail = error.getMessage();
                 String message = (detail != null && !detail.isEmpty())
@@ -181,15 +201,16 @@ public final class ShadeSwitchSettingsActivity extends Activity {
     }
 
     private void onRemotePreferencesLoaded(
-            int token, XposedService service, SharedPreferences prefs, boolean value) {
+            int token, XposedService service, SharedPreferences prefs, boolean vertical, boolean hideRow) {
         if (isFinishing() || isDestroyed() || token != operationToken || boundService != service) {
             return;
         }
         remotePrefs = prefs;
         remotePrefsLoaded = true;
-        confirmedValue = value;
-        setSwitchCheckedSilently(confirmedValue);
-        setSwitchInteractive(true);
+        verticalSwipe.confirmed = vertical;
+        hideQuickQs.confirmed = hideRow;
+        showConfirmedValues();
+        setSwitchesInteractive(true);
         hideNotice();
     }
 
@@ -199,8 +220,8 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         }
         remotePrefs = null;
         remotePrefsLoaded = false;
-        setSwitchCheckedSilently(confirmedValue);
-        setSwitchInteractive(false);
+        showConfirmedValues();
+        setSwitchesInteractive(false);
         showNotice(message, true, true);
     }
 
@@ -211,43 +232,43 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         operationToken++;
         remotePrefs = null;
         remotePrefsLoaded = false;
-        setSwitchCheckedSilently(confirmedValue);
-        setSwitchInteractive(false);
+        showConfirmedValues();
+        setSwitchesInteractive(false);
         showNotice(getString(R.string.lsposed_service_disconnected), true, true);
     }
 
-    private void onVerticalSwipeToggled(boolean desiredValue) {
+    private void onToggled(ToggleRow row, boolean desiredValue) {
         if (updatingUi) {
             return;
         }
         final SharedPreferences prefsSnapshot = remotePrefs;
         final XposedService serviceSnapshot = boundService;
-        final boolean previousConfirmed = confirmedValue;
+        final boolean previousConfirmed = row.confirmed;
         if (!remotePrefsLoaded || prefsSnapshot == null || serviceSnapshot == null) {
-            setSwitchCheckedSilently(previousConfirmed);
-            setSwitchInteractive(false);
+            showConfirmedValues();
+            setSwitchesInteractive(false);
             showNotice(getString(R.string.lsposed_service_disconnected), true, true);
             return;
         }
 
         final int token = ++operationToken;
         // Disable interaction while the remote commit() executes off the main thread.
-        setSwitchInteractive(false);
+        setSwitchesInteractive(false);
         PREFS_EXECUTOR.execute(() -> {
             ShadeSwitchPrefs.SaveResult result =
-                    ShadeSwitchPrefs.commitVerticalSwipe(prefsSnapshot, desiredValue, previousConfirmed);
-            mainHandler.post(() -> onVerticalSwipeCommitted(token, result));
+                    ShadeSwitchPrefs.commitBoolean(prefsSnapshot, row.key, desiredValue, previousConfirmed);
+            mainHandler.post(() -> onCommitted(token, row, result));
         });
     }
 
-    private void onVerticalSwipeCommitted(int token, ShadeSwitchPrefs.SaveResult result) {
+    private void onCommitted(int token, ToggleRow row, ShadeSwitchPrefs.SaveResult result) {
         if (isFinishing() || isDestroyed() || token != operationToken) {
             return;
         }
-        confirmedValue = result.currentValue;
-        setSwitchCheckedSilently(confirmedValue);
+        row.confirmed = result.currentValue;
+        showConfirmedValues();
         boolean serviceStillReady = boundService != null && remotePrefs != null && remotePrefsLoaded;
-        setSwitchInteractive(serviceStillReady);
+        setSwitchesInteractive(serviceStillReady);
         if (!result.success) {
             showNotice(result.message, true, true);
             return;
@@ -255,24 +276,16 @@ public final class ShadeSwitchSettingsActivity extends Activity {
         showNotice(getString(R.string.restart_systemui_to_apply), false, true);
     }
 
-    private void setSwitchInteractive(boolean enabled) {
-        if (verticalSwipeSwitch != null) {
-            verticalSwipeSwitch.setEnabled(enabled);
-        }
-        if (switchCard != null) {
-            switchCard.setEnabled(enabled);
-            switchCard.setClickable(enabled);
-            switchCard.setAlpha(enabled ? 1.0f : 0.55f);
-        }
+    private void setSwitchesInteractive(boolean enabled) {
+        verticalSwipe.setInteractive(enabled);
+        hideQuickQs.setInteractive(enabled);
     }
 
-    private void setSwitchCheckedSilently(boolean checked) {
-        if (verticalSwipeSwitch == null) {
-            return;
-        }
+    private void showConfirmedValues() {
         updatingUi = true;
         try {
-            verticalSwipeSwitch.setChecked(checked);
+            verticalSwipe.toggle.setChecked(verticalSwipe.confirmed);
+            hideQuickQs.toggle.setChecked(hideQuickQs.confirmed);
         } finally {
             updatingUi = false;
         }
@@ -359,75 +372,24 @@ public final class ShadeSwitchSettingsActivity extends Activity {
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT));
 
-        switchCard = new LinearLayout(this);
-        switchCard.setOrientation(LinearLayout.HORIZONTAL);
-        switchCard.setGravity(Gravity.CENTER_VERTICAL);
-        int cardPad = dp(18);
-        switchCard.setPadding(cardPad, cardPad, cardPad, cardPad);
-        GradientDrawable cardDrawable = new GradientDrawable();
-        cardDrawable.setColor(cardBg);
-        cardDrawable.setCornerRadius(dp(18));
-        cardDrawable.setStroke(dp(1), cardStroke);
-        switchCard.setBackground(cardDrawable);
+        verticalSwipe = addToggleRow(root, ShadeSwitchPrefs.KEY_VERTICAL_SWIPE,
+                R.string.vertical_swipe_title, R.string.vertical_swipe_summary,
+                cardBg, cardStroke, primaryText, secondaryText, 20);
 
-        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        cardParams.topMargin = dp(20);
-        root.addView(switchCard, cardParams);
+        TextView togetherHeading = new TextView(this);
+        togetherHeading.setText(R.string.together_style);
+        togetherHeading.setTextColor(secondaryText);
+        togetherHeading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        togetherHeading.setAccessibilityHeading(true);
+        LinearLayout.LayoutParams headingParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        headingParams.topMargin = dp(24);
+        headingParams.setMarginStart(dp(4));
+        root.addView(togetherHeading, headingParams);
 
-        LinearLayout textColumn = new LinearLayout(this);
-        textColumn.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout.LayoutParams textColParams = new LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1.0f);
-        textColParams.setMarginEnd(dp(16));
-        switchCard.addView(textColumn, textColParams);
-
-        TextView switchTitle = new TextView(this);
-        switchTitle.setText(R.string.vertical_swipe_title);
-        switchTitle.setTextColor(primaryText);
-        switchTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-        switchTitle.getPaint().setFakeBoldText(true);
-        switchTitle.setSingleLine(false);
-        switchTitle.setIncludeFontPadding(true);
-        textColumn.addView(
-                switchTitle,
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.MATCH_PARENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        TextView switchSummary = new TextView(this);
-        switchSummary.setText(R.string.vertical_swipe_summary);
-        switchSummary.setTextColor(secondaryText);
-        switchSummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-        switchSummary.setSingleLine(false);
-        switchSummary.setIncludeFontPadding(true);
-        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT);
-        summaryParams.topMargin = dp(6);
-        textColumn.addView(switchSummary, summaryParams);
-
-        verticalSwipeSwitch = new Switch(this);
-        verticalSwipeSwitch.setEnabled(false);
-        verticalSwipeSwitch.setContentDescription(getString(R.string.vertical_swipe_title));
-        verticalSwipeSwitch.setOnCheckedChangeListener(
-                (buttonView, isChecked) -> onVerticalSwipeToggled(isChecked));
-        switchCard.addView(
-                verticalSwipeSwitch,
-                new LinearLayout.LayoutParams(
-                        LinearLayout.LayoutParams.WRAP_CONTENT,
-                        LinearLayout.LayoutParams.WRAP_CONTENT));
-
-        switchCard.setOnClickListener(v -> {
-            if (verticalSwipeSwitch != null && verticalSwipeSwitch.isEnabled()) {
-                verticalSwipeSwitch.toggle();
-            }
-        });
-        switchCard.setEnabled(false);
-        switchCard.setClickable(false);
+        hideQuickQs = addToggleRow(root, ShadeSwitchPrefs.KEY_HIDE_QUICK_QS_ROW,
+                R.string.hide_quick_qs_title, R.string.hide_quick_qs_summary,
+                cardBg, cardStroke, primaryText, secondaryText, 8);
 
         noticeView = new TextView(this);
         noticeView.setText(R.string.lsposed_service_waiting);
@@ -444,6 +406,75 @@ public final class ShadeSwitchSettingsActivity extends Activity {
 
         setContentView(scrollView);
         scrollView.requestApplyInsets();
+    }
+
+    private ToggleRow addToggleRow(LinearLayout root, String key, int titleRes, int summaryRes,
+            int cardBg, int cardStroke, int primaryText, int secondaryText, int topMarginDp) {
+        LinearLayout switchCard = new LinearLayout(this);
+        switchCard.setOrientation(LinearLayout.HORIZONTAL);
+        switchCard.setGravity(Gravity.CENTER_VERTICAL);
+        int cardPad = dp(18);
+        switchCard.setPadding(cardPad, cardPad, cardPad, cardPad);
+        GradientDrawable cardDrawable = new GradientDrawable();
+        cardDrawable.setColor(cardBg);
+        cardDrawable.setCornerRadius(dp(18));
+        cardDrawable.setStroke(dp(1), cardStroke);
+        switchCard.setBackground(cardDrawable);
+
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        cardParams.topMargin = dp(topMarginDp);
+        root.addView(switchCard, cardParams);
+
+        LinearLayout textColumn = new LinearLayout(this);
+        textColumn.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams textColParams = new LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1.0f);
+        textColParams.setMarginEnd(dp(16));
+        switchCard.addView(textColumn, textColParams);
+
+        TextView switchTitle = new TextView(this);
+        switchTitle.setText(titleRes);
+        switchTitle.setTextColor(primaryText);
+        switchTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        switchTitle.getPaint().setFakeBoldText(true);
+        switchTitle.setSingleLine(false);
+        switchTitle.setIncludeFontPadding(true);
+        textColumn.addView(
+                switchTitle,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        TextView switchSummary = new TextView(this);
+        switchSummary.setText(summaryRes);
+        switchSummary.setTextColor(secondaryText);
+        switchSummary.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        switchSummary.setSingleLine(false);
+        switchSummary.setIncludeFontPadding(true);
+        LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        summaryParams.topMargin = dp(6);
+        textColumn.addView(switchSummary, summaryParams);
+
+        Switch toggle = new Switch(this);
+        ToggleRow row = new ToggleRow(key, switchCard, toggle);
+        toggle.setContentDescription(getString(titleRes));
+        toggle.setOnCheckedChangeListener(
+                (buttonView, isChecked) -> onToggled(row, isChecked));
+        switchCard.addView(
+                toggle,
+                new LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.WRAP_CONTENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        switchCard.setOnClickListener(v -> toggle.toggle());
+        row.setInteractive(false);
+        return row;
     }
 
     private int dp(int value) {
