@@ -4,33 +4,24 @@ package com.samsung.music.qs.lagfix;
  * Pure math and state-calculation helpers for the GlassUI-style horizontal transition between
  * Notifications and Quick Settings on One UI 9.
  *
- * <p>Reference opacity trace summary:
- * <ul>
- *   <li>In {@code GlassUI-2.3.4.apk}, {@code PageSwipe.onSlide} reads {@code fraction} and
- *       {@code stateToChange} from {@code PanelTransitionAnimator.slide(float, float, Direction, int)}
- *       and computes {@code controls = (stateToChange == 0) ? fraction : (1f - fraction)}.
- *   <li>When swiping Notifications -> Quick Settings ({@code stateToChange == 0}), Samsung's native
- *       {@code shadeFadeOutLeft}/{@code shadeFadeOutRight} fades Notifications out with
- *       {@code mEndDelay = 0.5f} (reaching {@code 0f} at {@code fraction = 0.50f}), while GlassUI's
- *       {@code SideSlide.alphaAt(controls) = clamp(1.5f * controls, 0f, 1f)} fades Quick Settings
- *       in over {@code fraction in [0.0, 0.667]}.
- *   <li>When swiping Quick Settings -> Notifications ({@code stateToChange == 1}), GlassUI's
- *       {@code SideSlide.alphaAt(1f - fraction)} stays clamped at {@code 1.0f} until
- *       {@code fraction = 1/3 (~0.333)} and only reaches {@code 0f} at {@code fraction = 1.0f},
- *       while Samsung's {@code shadeFadeInRight}/{@code shadeFadeInLeft} ({@code mStartDelay = 0.5f})
- *       keeps Notifications at {@code 0f} until {@code fraction = 0.50f}.
- * </ul>
- *
- * <p>To provide a symmetric, immediate outgoing fade in both directions while keeping the incoming
- * panel at full opacity ({@code 1.0f}) as soon as it enters the screen, we use the single named
- * cutoff {@link #FADE_CUTOFF} ({@code 0.45f}).
+ * <p>Outgoing opacity curve ({@link #FADE_CUTOFF} = {@code 0.50f}):
+ * <pre>
+ * t = clamp01(progress / FADE_CUTOFF)
+ * alpha = (1 - t * t) * (1 - t * t * t)
+ * </pre>
+ * This begins fading on the first visible movement, eases smoothly through {@code 0.65625} at
+ * {@code 25%} drag and {@code 0.17568} at {@code 40%} drag, and reaches {@code 0.0f} when the
+ * incoming panel is {@code 50%} of the way in (and stays {@code 0.0f} beyond {@code 50%}) in both
+ * swipe directions. Holding the finger still holds both translation and opacity, and reversing
+ * restores opacity along the exact same curve.
  */
 public final class HorizontalTransitionMath {
     /**
-     * Named incoming-page progress cutoff at which the outgoing page reaches {@code 0.0f} opacity
-     * in both directions ({@code Notifications -> QS} and {@code QS -> Notifications}).
+     * Named incoming-page progress cutoff ({@code 0.50f}) at which the outgoing page eases to
+     * {@code 0.0f} opacity in both directions ({@code Notifications -> QS} and
+     * {@code QS -> Notifications}).
      */
-    public static final float FADE_CUTOFF = 0.45f;
+    public static final float FADE_CUTOFF = 0.50f;
 
     /** {@code SecPanelSplitHelper.QS_STATE} / {@code PanelTransitionAnimator.QS_STATE}. */
     public static final int QS_STATE = 0;
@@ -55,6 +46,9 @@ public final class HorizontalTransitionMath {
 
     /** Compose {@code slideFraction} value when Quick Settings is hidden in settled Shade state. */
     public static final float COMPOSE_SLIDE_FRACTION_HIDDEN = 1.0f;
+
+    /** Blur alpha passed to child {@code ActivatableNotificationView}s during a horizontal drag. */
+    public static final float NESTED_NOTIFICATION_BLUR_ALPHA_ACTIVE = 1.0f;
 
     private HorizontalTransitionMath() {
     }
@@ -104,29 +98,52 @@ public final class HorizontalTransitionMath {
     }
 
     /**
-     * Computes the outgoing page opacity for a given incoming-page drag progress in {@code [0, 1]}.
-     *
-     * <p>Starts fading on the first visible movement ({@code progress > 0f}) and reaches {@code 0f}
-     * linearly at {@code progress == FADE_CUTOFF (0.45f)}, remaining at {@code 0f} while rigid
-     * translation continues over {@code (0.45f, 1.0f]}.
+     * Computes the outgoing page opacity for a given incoming-page drag progress in {@code [0, 1]}
+     * using the eased quintic curve over {@link #FADE_CUTOFF} ({@code 0.50f}):
+     * <pre>
+     * t = clamp01(progress / FADE_CUTOFF)
+     * alpha = (1 - t * t) * (1 - t * t * t)
+     * </pre>
      */
     public static float outgoingAlpha(float progress) {
         float p = clamp01(progress);
         if (p >= FADE_CUTOFF) {
             return 0.0f;
         }
-        return clamp01(1.0f - (p / FADE_CUTOFF));
+        float t = clamp01(p / FADE_CUTOFF);
+        float tt = t * t;
+        return clamp01((1.0f - tt) * (1.0f - tt * t));
     }
 
     /**
      * Computes the incoming page opacity for a given drag progress.
      *
-     * <p>The incoming page renders at full opacity ({@code 1.0f}) immediately as it enters the
-     * screen so QS tiles, sliders, and media controls (or Notification rows) are completely visible
+     * <p>The incoming page renders at full opacity ({@code 1.0f}) immediately from the first frame
+     * so QS tiles, sliders, and media controls (or Notification rows) are completely visible
      * throughout the drag.
      */
     public static float incomingAlpha(float progress) {
         return 1.0f;
+    }
+
+    /**
+     * Returns the blur alpha to pass to nested {@code ActivatableNotificationView.setBlurAlphaFromParent(float)}
+     * calls inside {@code NotificationStackScrollLayout.setAlpha(float)}.
+     *
+     * <p>In One UI 9, {@code NotificationStackScrollLayout.setAlpha(v)} sets both the parent
+     * {@code ViewGroup} hardware-layer alpha ({@code super.setAlpha(v)}) and loops over every child
+     * {@code ActivatableNotificationView} to call {@code setBlurAlphaFromParent(v)}. If both run during
+     * a horizontal fade, each notification card's blur background opacity is multiplied by {@code v}
+     * a second time ({@code v * v}), making outgoing notifications lose opacity prematurely. Pinning
+     * child blur alpha to {@code 1.0f} while a horizontal swipe is active lets the parent container's
+     * single eased opacity curve govern the entire Notifications panel uniformly.
+     */
+    public static float effectiveNestedNotificationBlurAlpha(
+            boolean activeHorizontalSwipe, float requestedAlpha) {
+        if (activeHorizontalSwipe) {
+            return NESTED_NOTIFICATION_BLUR_ALPHA_ACTIVE;
+        }
+        return clamp01(requestedAlpha);
     }
 
     /**
@@ -146,7 +163,7 @@ public final class HorizontalTransitionMath {
      *
      * <p>In normal panel order ({@code reversed == false}), Quick Settings sits to the right of
      * Notifications: {@code translationX = +width * (1 - qsShown)}.
-     *<ul>
+     * <ul>
      *   <li>Swiping left (Notifications -> QS, {@code qsShown: 0 -> 1}): QS moves from {@code +width} to {@code 0}.
      *   <li>Swiping right (QS -> Notifications, {@code qsShown: 1 -> 0}): QS moves from {@code 0} to {@code +width}.
      * </ul>
@@ -215,7 +232,7 @@ public final class HorizontalTransitionMath {
      * Therefore, whenever a horizontal transition is actively running ({@code activeHorizontalDrag == true}),
      * {@code slideFraction} MUST be pinned to {@code 0.0f} so the Compose scene renders at full
      * fidelity without internal offset/fade while the outer Android view ({@code qsRootView}) carries
-     * the rigid page translation and {@link #FADE_CUTOFF} opacity. Once the gesture settles,
+     * the rigid page translation and eased {@link #FADE_CUTOFF} opacity. Once the gesture settles,
      * {@code slideFraction} returns to {@code 0.0f} for {@link #QS_STATE} or {@code 1.0f} for
      * {@link #SHADE_STATE}.
      */

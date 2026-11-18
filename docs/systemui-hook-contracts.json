@@ -97,6 +97,15 @@
         }
       ]
     },
+    "Lcom/android/systemui/statusbar/notification/row/ActivatableNotificationView;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "setBlurAlphaFromParent",
+          "descriptor": "(F)V"
+        }
+      ]
+    },
     "Lkotlinx/coroutines/flow/StateFlow;": {
       "fields": {},
       "methods": [
@@ -106,21 +115,107 @@
         }
       ]
     },
+    "Lcom/android/systemui/shade/NotificationShadeWindowView;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "onConfigurationChanged",
+          "descriptor": "(Landroid/content/res/Configuration;)V"
+        },
+        {
+          "name": "onDetachedFromWindow",
+          "descriptor": "()V"
+        }
+      ]
+    },
     "Lcom/android/systemui/shade/SecPanelSplitHelper;": {
       "fields": {
         "enabled": "Z",
-        "reversed": "Z",
+        "panelExpanded": "Z",
         "currentState": "I",
+        "stateOnDown": "I",
+        "stateToChange": "I",
+        "panelSlideEventHandler": "Lcom/android/systemui/shade/PanelSlideEventHandler;",
         "panelRootView": "Landroid/view/View;",
+        "isQsDisabled": "Z",
+        "isShadeDisabled": "Z",
+        "secQsUiDisplayModeInteractor": "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;",
         "composeAdapter": "Lcom/android/systemui/samsung/quicksetting/SecQSPanelComposeAdapter;"
       },
       "methods": [
+        {
+          "name": "onIntercept",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        },
+        {
+          "name": "handleTouch",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        },
         {
           "name": "updatePanelVisibility",
           "descriptor": "()V"
         },
         {
           "name": "isReversed",
+          "descriptor": "()Z"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/PanelSlideEventHandler;": {
+      "fields": {
+        "panelSliderIntercepted": "Z",
+        "direction": "Lcom/android/systemui/shade/PanelSlideEventHandler$Direction;",
+        "touchSlop": "I",
+        "shadeHeaderController$delegate": "Lkotlin/Lazy;",
+        "initialY": "F",
+        "isInChangeSpotOnDown": "Z",
+        "secPanelSplitHelper": "Lcom/android/systemui/shade/SecPanelSplitHelper;"
+      },
+      "methods": [
+        {
+          "name": "initiateSlide",
+          "descriptor": "(Landroid/view/MotionEvent;)V"
+        },
+        {
+          "name": "slidePointerDeltas",
+          "descriptor": "(Landroid/view/MotionEvent;)Lkotlin/Pair;"
+        },
+        {
+          "name": "updateDirection",
+          "descriptor": "(FF)V"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/ShadeHeaderController;": {
+      "fields": {
+        "header": "Landroidx/constraintlayout/motion/widget/MotionLayout;"
+      },
+      "methods": []
+    },
+    "Lcom/android/systemui/qs/animator/QsAnimatorState;": {
+      "fields": {
+        "state": "I",
+        "isSliding": "Z",
+        "isDetailOpening": "Z",
+        "isDetailShowing": "Z",
+        "isDetailClosing": "Z",
+        "isCustomizerShowing": "Z"
+      },
+      "methods": [],
+      "static_fields": [
+        "isCustomizerShowing",
+        "isDetailClosing",
+        "isDetailOpening",
+        "isDetailShowing",
+        "isSliding",
+        "state"
+      ]
+    },
+    "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "isPopOverEnabled",
           "descriptor": "()Z"
         }
       ]

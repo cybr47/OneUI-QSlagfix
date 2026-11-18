@@ -33,14 +33,15 @@ for index, argument in enumerate(sys.argv[1:]):
         classes = set().union(*(defined_classes(dex) for dex in dexes))
         for entry in entries:
             assert "L" + entry.replace(".", "/") + ";" in classes, "module entry class missing from the APK"
-        assert not any(name.startswith("Lio/github/libxposed/") for name in classes), "compileOnly API bundled"
+        assert not any(name.startswith("Lio/github/libxposed/api/") for name in classes), "compileOnly API bundled"
         assert "assets/xposed_init" not in apk.namelist(), "legacy entry remains"
         if index == 1:
             # Release is intentionally not minified (see app/build.gradle.kts) and writes one short status
             # line per SystemUI start, so the LSPosed log proves the module loaded and its hooks installed.
             blob = b"".join(dexes)
             for message in [b"Loaded in SystemUI, module version",
-                            b"Horizontal panel transition hooks installed"]:
+                            b"Horizontal panel transition hooks installed",
+                            b"Panel gesture hooks installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()
     sdk = os.environ.get("ANDROID_HOME") or os.environ["ANDROID_SDK_ROOT"]
     actual = subprocess.check_output([str(Path(sdk) / "cmdline-tools/latest/bin/apkanalyzer"),

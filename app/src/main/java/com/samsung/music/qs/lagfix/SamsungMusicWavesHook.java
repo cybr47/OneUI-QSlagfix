@@ -1,19 +1,22 @@
 package com.samsung.music.qs.lagfix;
 
+import android.content.SharedPreferences;
 import android.util.Log;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * Module entry point for the {@code cust} branch of OneUI-QSlagfix.
+ * Module entry point for the {@code cust} branch of ShadeSwitch ({@code cybr47/OneUI-QSlagfix}).
  *
- * <p>On One UI 9 (Android 17), the stock media waveform renderers
- * ({@code audiovisseekbar.renderer.track.auto.MultiWaveAreaTrackRenderer} and
- * {@code colorfulwave.renderer.MultiWaveAreaTrackRenderer}) already early-out when idle and cache
- * their gradients and xfermodes; raising {@code stepX} from {@code 2} to {@code 8}/{@code 10} only
- * coarsens the sine path into straight segments without improving panel transition performance.
- * Therefore, {@code cust} omits the media-wave coarsening hooks while preserving this class as the
- * {@code META-INF/xposed/java_init.list} module entry point and installing the GlassUI-style
- * horizontal Notifications <-> Quick Settings transition hooks.
+ * <p>Reads the {@link ShadeSwitchPrefs#KEY_VERTICAL_SWIPE} Remote Preference at SystemUI startup
+ * and installs <b>only</b> the selected mode's hooks:
+ * <ul>
+ *   <li><b>Off ({@code false}, default)</b>: installs {@link HorizontalPanelTransitionHooks} with
+ *       the eased {@code 50%} ({@code 0.50f}) outgoing fade.
+ *   <li><b>On ({@code true})</b>: installs {@link NoSwipePanelHooks} from {@code area-increase},
+ *       restoring the vertical header drag (including the expanded clock/date/button-row hit area
+ *       and lockscreen shade support) and disabling horizontal panel switching.
+ * </ul>
+ * Media-wave coarsening hooks remain omitted in both modes.
  */
 public final class SamsungMusicWavesHook extends XposedModule {
     private boolean targetProcess;
@@ -43,11 +46,34 @@ public final class SamsungMusicWavesHook extends XposedModule {
             return;
         }
         installed = true;
-        if (BuildConfig.DEBUG) debug("SystemUI package ready: installing hooks", null);
+        boolean verticalSwipe = readVerticalSwipePreference();
+        if (BuildConfig.DEBUG) {
+            debug("SystemUI package ready: installing hooks (verticalSwipe=" + verticalSwipe + ")", null);
+        }
         // Visible in release builds: if this line is missing from the LSPosed log, the module never loaded.
-        note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TYPE + ")");
+        note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME
+                + " (" + BuildConfig.BUILD_TYPE + ", mode="
+                + (verticalSwipe ? "vertical" : "horizontal") + ")");
         ClassLoader loader = param.getClassLoader();
-        HorizontalPanelTransitionHooks.install(this, loader);
+        if (verticalSwipe) {
+            NoSwipePanelHooks.install(this, loader);
+        } else {
+            HorizontalPanelTransitionHooks.install(this, loader);
+        }
+    }
+
+    private boolean readVerticalSwipePreference() {
+        try {
+            SharedPreferences prefs = getRemotePreferences(ShadeSwitchPrefs.PREFS_GROUP);
+            if (prefs != null) {
+                return prefs.getBoolean(
+                        ShadeSwitchPrefs.KEY_VERTICAL_SWIPE,
+                        ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE);
+            }
+        } catch (Throwable error) {
+            warn("Unable to read remote preferences; defaulting to horizontal swipe mode", error);
+        }
+        return ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE;
     }
 
     /** Verbose diagnostics: debug builds only. */

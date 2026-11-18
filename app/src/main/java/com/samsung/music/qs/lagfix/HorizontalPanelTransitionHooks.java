@@ -8,16 +8,16 @@ import io.github.libxposed.api.XposedInterface;
 
 /**
  * Installs the GlassUI-style horizontal transition between Notifications and Quick Settings on
- * the {@code cust} branch of OneUI-QSlagfix using the libxposed 102
+ * the {@code cust} branch of ShadeSwitch using the libxposed 102
  * {@code module.hook(method).intercept(...)} API.
  *
  * <p>Key design guarantees:
  * <ol>
- *   <li><b>All reflection resolved once</b>: {@link NativePanels} resolves every {@link Class},
- *       {@link java.lang.reflect.Field}, {@link java.lang.reflect.Method}, and {@code Direction}
- *       enum constant once during {@link #install(SamsungMusicWavesHook, ClassLoader)}, and caches
- *       per-animator object/view references inside {@link HorizontalSwipeSession} when a swipe
- *       starts.
+ *   <li><b>All reflection resolved once</b>: {@link HorizontalTransitionPanels} resolves every
+ *       {@link Class}, {@link java.lang.reflect.Field}, {@link java.lang.reflect.Method}, and
+ *       {@code Direction} enum constant once during
+ *       {@link #install(SamsungMusicWavesHook, ClassLoader)}, and caches per-animator object/view
+ *       references inside {@link HorizontalSwipeSession} when a swipe starts.
  *   <li><b>No double {@code slideFraction} writes per frame</b>: During an active horizontal
  *       transition ({@code panelTransitionState == TRANSITION_STATE}, {@code LEFT}/{@code RIGHT},
  *       {@code overSlideX == 0f}), {@link #interceptSlide} handles the frame directly without
@@ -25,6 +25,21 @@ import io.github.libxposed.api.XposedInterface;
  *       {@code 1f - fraction} or {@code fraction} to {@code composeAdapter.setSlideFraction} and
  *       step stock's {@code ±300px}/{@code ±250px} {@code TouchAnimator}s). Instead,
  *       {@code setSlideFraction(0f)} is written at most once when the horizontal swipe begins.
+ *   <li><b>No nested second-alpha or mid-drag visibility drop</b>:
+ *       <ul>
+ *         <li>Pinning {@code SecQSPanelComposeAdapter.setSlideFraction(0f)} keeps Compose
+ *             {@code alphaOfScene}, {@code alphaOfBlurTileBackground}, and {@code alphaOfSlide} at
+ *             {@code 1.0f} so {@code qsRootView.setAlpha(frame.qsAlpha)} is the sole opacity curve
+ *             on Quick Settings.
+ *         <li>Hooking {@code ActivatableNotificationView.setBlurAlphaFromParent(float)} keeps child
+ *             notification card blur drawables at {@code 1.0f} while a horizontal swipe is active so
+ *             {@code NotificationStackScrollLayout.setAlpha(frame.notificationsAlpha)} does not
+ *             square the fade ({@code alpha * alpha}) on child notification cards.
+ *         <li>Skipping redundant per-frame {@code onPanelTransitionStateChanged(TRANSITION_STATE)}
+ *             callbacks (emitted by {@code SecPanelSplitHelper.setDraggedFraction} on each drag
+ *             frame) prevents mid-drag visibility/alpha churn on {@code buttonContainer} and
+ *             {@code clockDateContainer}.
+ *       </ul>
  *   <li><b>Scoped cleanup &amp; exact prior-value restoration</b>: View mutations and cleanup are
  *       strictly scoped to an active {@link HorizontalSwipeSession}. When no horizontal swipe is
  *       active, {@code onPanelTransitionStateChanged}, {@code clearAnimationState}, and
@@ -36,16 +51,17 @@ import io.github.libxposed.api.XposedInterface;
  */
 final class HorizontalPanelTransitionHooks {
     private final SamsungMusicWavesHook module;
-    private final NativePanels panels;
+    private final HorizontalTransitionPanels panels;
     private final WeakHashMap<Object, HorizontalSwipeSession> sessions = new WeakHashMap<>();
     private final WeakHashMap<Object, HorizontalSwipeSession> adapterSessions = new WeakHashMap<>();
+    private int activeSessionCount;
     private boolean internalSlideFractionWrite;
     private volatile boolean failed;
 
     private HorizontalPanelTransitionHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
         this.module = module;
-        this.panels = new NativePanels(loader);
+        this.panels = new HorizontalTransitionPanels(loader);
     }
 
     static void install(SamsungMusicWavesHook module, ClassLoader loader) {
@@ -69,6 +85,11 @@ final class HorizontalPanelTransitionHooks {
             handles.add(module.hook(hooks.panels.setSlideFraction)
                     .setId("horizontal-compose-slide-fraction")
                     .intercept(hooks::interceptSetSlideFraction));
+            if (hooks.panels.setBlurAlphaFromParent != null) {
+                handles.add(module.hook(hooks.panels.setBlurAlphaFromParent)
+                        .setId("horizontal-notif-blur-alpha")
+                        .intercept(hooks::interceptSetBlurAlphaFromParent));
+            }
             module.note("Horizontal panel transition hooks installed (FADE_CUTOFF="
                     + HorizontalTransitionMath.FADE_CUTOFF + ")");
         } catch (Throwable error) {
@@ -121,6 +142,7 @@ final class HorizontalPanelTransitionHooks {
             }
             if (!session.isActive()) {
                 session.begin();
+                activeSessionCount++;
                 panels.bindSession(animator, session);
                 if (session.composeAdapter != null) {
                     adapterSessions.put(session.composeAdapter, session);
@@ -159,7 +181,7 @@ final class HorizontalPanelTransitionHooks {
             panels.prepareDrawables(session);
 
             // 3. Save prior panel view properties (on first frame) and apply rigid full-width
-            //    translationX and FADE_CUTOFF (0.45f) opacity.
+            //    translationX and eased FADE_CUTOFF (0.50f) opacity.
             session.applyPageTransform(
                     session.qsRootView,
                     session.qsAnimView,
@@ -221,6 +243,18 @@ final class HorizontalPanelTransitionHooks {
         return chain.proceed();
     }
 
+    private Object interceptSetBlurAlphaFromParent(XposedInterface.Chain chain) throws Throwable {
+        if (failed || !mainThread() || activeSessionCount <= 0) {
+            return chain.proceed();
+        }
+        float requested = ((Number) chain.getArg(0)).floatValue();
+        float effective = HorizontalTransitionMath.effectiveNestedNotificationBlurAlpha(true, requested);
+        if (Math.abs(requested - effective) <= 0.0005f) {
+            return chain.proceed();
+        }
+        return chain.proceed(new Object[]{effective});
+    }
+
     private Object interceptStateChanged(XposedInterface.Chain chain) throws Throwable {
         if (failed || !mainThread()) {
             return chain.proceed();
@@ -244,7 +278,11 @@ final class HorizontalPanelTransitionHooks {
         }
 
         if (newState == HorizontalTransitionMath.TRANSITION_STATE) {
-            return chain.proceed();
+            // SecPanelSplitHelper.setDraggedFraction fires onPanelTransitionStateChanged(TRANSITION_STATE)
+            // on every drag frame. Skip redundant per-frame state-change handling while the horizontal
+            // session is active so stock PanelTransitionAnimator does not churn button/clock visibility
+            // or prematurely call clearAnimationState() before updateState(stateToChange) runs.
+            return null;
         }
 
         // An active horizontal swipe is settling to QS_STATE (0), SHADE_STATE (1), or COMBINED_STATE (3).
@@ -335,6 +373,9 @@ final class HorizontalPanelTransitionHooks {
         Object composeAdapter = session.composeAdapter;
         Object slideFractionFlow = session.slideFractionFlow;
 
+        if (session.isActive() && activeSessionCount > 0) {
+            activeSessionCount--;
+        }
         session.restoreAndEnd(panels);
         sessions.remove(animator);
         if (composeAdapter != null) {
@@ -355,6 +396,7 @@ final class HorizontalPanelTransitionHooks {
     private void fail(Throwable error) {
         if (!failed) {
             failed = true;
+            activeSessionCount = 0;
             for (HorizontalSwipeSession session : sessions.values()) {
                 if (session != null && session.isActive()) {
                     try {
