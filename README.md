@@ -3,6 +3,7 @@
 An LSPosed module (`io.github.libxposed.api:101.0.0`) for **Samsung One UI 9 / Android 17** (`com.android.systemui`) that replaces Samsung's delayed cross-fade and `±300px` slide between **Notifications** and **Quick Settings** with a **GlassUI-style rigid horizontal page transition** driven directly by Samsung's native drag progress.
 
 > **Branch Architecture**
+> - On `tgtr`, enable **Vertical swipe to switch panels** in ShadeSwitch and select **Separate** in Samsung’s Panel settings. Pull down over empty space or the media player to open Quick Settings. Pulling on a notification expands it. Pull down on the Quick Settings header to return to Notifications, or swipe up from the panel background to close.
 > - `tgtr` adds **Together style → Hide Quick QS row** in ShadeSwitch settings. Enable it in LSPosed, restart SystemUI, and select **Together** in Samsung’s Panel settings. The first pull shows the notification panel without the compact tile row. A second pull opens full Quick Settings. Samsung’s **Brightness control** setting governs the slider.
 > - `cust`: Keeps Samsung's native horizontal gesture enabled by default and drives both pages with rigid full-width translation and a symmetric `FADE_CUTOFF = 0.45f` outgoing fade while keeping the stock Compose Quick Settings scene drawable throughout the drag.
 > - `area-increase`: Separate vertical-only variant (`NoSwipePanelHooks`) that disables horizontal panel switching and splits top-down pull zones at `60%` / `40%`.

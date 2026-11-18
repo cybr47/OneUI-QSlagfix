@@ -16,7 +16,7 @@ final class NativePanels {
     private static final int TRANSITION = 2;
     private static final int STATUS_SHADE = 0;
     private static final int STATUS_SHADE_LOCKED = 2;
-    final Method intercept, touch, initiate, pointerDeltas, updateDirection, rootDetached, rootConfig;
+    final Method intercept, touch, initiate, updateDirection, rootDetached, rootConfig;
     private final Field owner, enabled, expanded, current, handler, panelRoot;
     private final Field qsDisabled, shadeDisabled, mode, initialY, changeSpot, intercepted, direction;
     private final Field touchSlop, headerLazy, header;
@@ -67,7 +67,6 @@ final class NativePanels {
         intercept = method(helperType, "onIntercept", MotionEvent.class);
         touch = method(helperType, "handleTouch", MotionEvent.class);
         initiate = method(handlerType, "initiateSlide", MotionEvent.class);
-        pointerDeltas = method(handlerType, "slidePointerDeltas", MotionEvent.class);
         updateDirection = method(handlerType, "updateDirection", float.class, float.class);
         rootDetached = method(rootType, "onDetachedFromWindow");
         rootConfig = method(rootType, "onConfigurationChanged", android.content.res.Configuration.class);
@@ -109,6 +108,19 @@ final class NativePanels {
         return handler.get(helper);
     }
 
+    boolean notificationPage(Object helper) throws IllegalAccessException {
+        return helper != null && current.getInt(helper) == NOTIFICATIONS && enabled.getBoolean(helper);
+    }
+
+    boolean containsDown(Object helper, MotionEvent event) throws IllegalAccessException {
+        View area = (View) panelRoot.get(helper);
+        if (area == null) return false;
+        area.getLocationOnScreen(location);
+        float x = event.getRawX() - location[0];
+        float y = event.getRawY() - location[1];
+        return x >= 0 && x < area.getWidth() && y >= 0 && y < area.getHeight();
+    }
+
     boolean available(Object helper) throws ReflectiveOperationException {
         if (helper == null) return false;
         int barState = status.getInt(null);
@@ -140,6 +152,10 @@ final class NativePanels {
     void blockHorizontal(Object nativeHandler) throws IllegalAccessException {
         direction.set(nativeHandler, undecided);
         changeSpot.setBoolean(nativeHandler, false);
+    }
+
+    boolean alreadyIntercepted(Object nativeHandler) throws IllegalAccessException {
+        return intercepted.getBoolean(nativeHandler);
     }
 
     InitialYGate originGate(Object nativeHandler) throws ReflectiveOperationException {
@@ -241,14 +257,13 @@ final class NativePanels {
         headerAreas.remove(root.getRootView());
     }
 
-
-    private static Field field(Class<?> type, String name) throws NoSuchFieldException {
+    static Field field(Class<?> type, String name) throws NoSuchFieldException {
         Field value = type.getDeclaredField(name);
         value.setAccessible(true);
         return value;
     }
 
-    private static Method method(Class<?> type, String name, Class<?>... args) throws NoSuchMethodException {
+    static Method method(Class<?> type, String name, Class<?>... args) throws NoSuchMethodException {
         Method value = type.getDeclaredMethod(name, args);
         value.setAccessible(true);
         return value;

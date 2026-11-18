@@ -641,7 +641,7 @@ public final class HorizontalTransitionMathTest {
         assertFalse(ShadeSwitchPrefs.DEFAULT_VERTICAL_SWIPE);
         assertEquals("Vertical swipe to switch panels", ShadeSwitchPrefs.SWITCH_TITLE);
         assertEquals(
-                "Swipe down from the open panel\u2019s header to switch between Notifications and Quick Settings.",
+                "In Separate style, swipe down on the media player or empty space in Notifications to open Quick Settings. Swipe down on the Quick Settings header to return.",
                 ShadeSwitchPrefs.SWITCH_DESCRIPTION);
         assertEquals("Restart SystemUI to apply.", ShadeSwitchPrefs.RESTART_SYSTEMUI_NOTICE);
 

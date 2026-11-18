@@ -2,7 +2,7 @@
     <string name="app_name">ShadeSwitch</string>
     <string name="xposed_description">Swipe left or right to switch between Notifications and Quick Settings.</string>
     <string name="vertical_swipe_title">Vertical swipe to switch panels</string>
-    <string name="vertical_swipe_summary">Swipe down from the open panel\u2019s header to switch between Notifications and Quick Settings.</string>
+    <string name="vertical_swipe_summary">In Separate style, swipe down on the media player or empty space in Notifications to open Quick Settings. Swipe down on the Quick Settings header to return.</string>
     <string name="together_style">Together style</string>
     <string name="hide_quick_qs_title">Hide Quick QS row</string>
     <string name="hide_quick_qs_summary">Hide the compact row of tiles on the notification panel when using Together style.</string>

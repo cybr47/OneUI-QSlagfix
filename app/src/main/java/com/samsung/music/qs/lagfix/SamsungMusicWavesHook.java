@@ -13,8 +13,8 @@ import io.github.libxposed.api.XposedModule;
  *   <li><b>Off ({@code false}, default)</b>: installs {@link HorizontalPanelTransitionHooks} with
  *       the eased {@code 50%} ({@code 0.50f}) outgoing fade.
  *   <li><b>On ({@code true})</b>: installs {@link NoSwipePanelHooks} from {@code area-increase},
- *       restoring the vertical header drag (including the expanded clock/date/button-row hit area
- *       and lockscreen shade support) and disabling horizontal panel switching.
+ *       allowing a downward pull on the notification media card or empty space and on the
+ *       Quick Settings header. Horizontal panel switching is disabled.
  * </ul>
  * The compact tile row in Together style has its own preference.
  */

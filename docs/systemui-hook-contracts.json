@@ -112,6 +112,10 @@
         {
           "name": "updateBlurDrawableAlpha",
           "descriptor": "(F)V"
+        },
+        {
+          "name": "isMediaNotification",
+          "descriptor": "(Lcom/android/systemui/statusbar/notification/row/ExpandableNotificationRow;)Z"
         }
       ]
     },
@@ -150,7 +154,8 @@
         "isShadeDisabled": "Z",
         "secQsUiDisplayModeInteractor": "Lcom/android/systemui/util/SecQsUiDisplayModeInteractor;",
         "composeAdapter": "Lcom/android/systemui/samsung/quicksetting/SecQSPanelComposeAdapter;",
-        "isEnabled": "Z"
+        "isEnabled": "Z",
+        "shadeRootView": "Landroid/view/View;"
       },
       "methods": [
         {
@@ -308,6 +313,45 @@
           "descriptor": "(ZIIII)V"
         }
       ]
+    },
+    "Lcom/android/systemui/shade/NotificationPanelView;": {
+      "fields": {
+        "secNPVcontroller": "Lcom/android/systemui/shade/SecNotificationPanelViewController;"
+      },
+      "methods": [
+        {
+          "name": "dispatchTouchEvent",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        },
+        {
+          "name": "onInterceptTouchEvent",
+          "descriptor": "(Landroid/view/MotionEvent;)Z"
+        }
+      ]
+    },
+    "Lcom/android/systemui/shade/SecNotificationPanelViewController;": {
+      "fields": {
+        "panelSplitHelper": "Lcom/android/systemui/shade/SecPanelSplitHelper;"
+      },
+      "methods": [
+        {
+          "name": "isPanelTouchOccupied",
+          "descriptor": "()Z"
+        }
+      ]
+    },
+    "Lcom/android/systemui/statusbar/notification/stack/NotificationStackScrollLayout;": {
+      "fields": {},
+      "methods": [
+        {
+          "name": "getChildAtRawPosition",
+          "descriptor": "(FF)Lcom/android/systemui/statusbar/notification/row/ExpandableView;"
+        }
+      ]
+    },
+    "Lcom/android/systemui/statusbar/notification/row/ExpandableNotificationRow;": {
+      "fields": {},
+      "methods": []
     }
   }
 }

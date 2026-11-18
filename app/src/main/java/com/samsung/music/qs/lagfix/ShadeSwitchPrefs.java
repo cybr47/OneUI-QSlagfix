@@ -14,7 +14,7 @@ public final class ShadeSwitchPrefs {
      * Preference key controlling panel-switching gesture mode:
      * <ul>
      *   <li>{@code false} (default): horizontal swipe with eased {@code 50%} ({@code 0.50f}) fade.
-     *   <li>{@code true}: original {@code area-increase} vertical drag from the expanded panel header,
+     *   <li>{@code true}: vertical drag from Notifications or the expanded Quick Settings header,
      *       with horizontal panel switching disabled.
      * </ul>
      */
@@ -31,7 +31,7 @@ public final class ShadeSwitchPrefs {
 
     /** Switch description in ShadeSwitch settings. */
     public static final String SWITCH_DESCRIPTION =
-            "Swipe down from the open panel\u2019s header to switch between Notifications and Quick Settings.";
+            "In Separate style, swipe down on the media player or empty space in Notifications to open Quick Settings. Swipe down on the Quick Settings header to return.";
 
     /** Notice shown only after a confirmed remote write succeeds. */
     public static final String RESTART_SYSTEMUI_NOTICE = "Restart SystemUI to apply.";
