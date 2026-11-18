@@ -4,7 +4,11 @@ plugins {
 
 android {
     namespace = "com.samsung.music.qs.lagfix"
-    compileSdk = 37
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
