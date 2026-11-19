@@ -3,6 +3,7 @@ package com.samsung.music.qs.lagfix;
 import android.os.Looper;
 import android.view.Choreographer;
 import android.view.View;
+import android.view.ViewParent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
@@ -314,15 +315,31 @@ final class HorizontalPanelTransitionHooks {
         // Keep controls on the native views, not on any GlassUI replacement UI.
         session.applyPageTransform(session.shadeRootView, session.shadeAnimView,
                 notiX, notificationAlpha, true, panels);
-        session.applyPageTransform(session.buttonView, session.buttonAnimView,
-                notiX, notificationAlpha, true, panels);
-        session.applyPageTransform(session.clockDateView, session.clockDateAnimView,
-                notiX, notificationAlpha, true, panels);
+        // A child already inherits its parent's transform. Do not apply a
+        // second translation to Samsung clock/date or button children.
+        if (!isDescendantOf(session.buttonView, session.shadeRootView)) {
+            session.applyPageTransform(session.buttonView, session.buttonAnimView,
+                    notiX, notificationAlpha, true, panels);
+        }
+        if (!isDescendantOf(session.clockDateView, session.shadeRootView)) {
+            session.applyPageTransform(session.clockDateView, session.clockDateAnimView,
+                    notiX, notificationAlpha, true, panels);
+        }
 
         // Shared header chrome is never treated as a sliding page.
         session.keepStationaryX(session.headerView, session.headerAnimView, panels);
         session.keepStationaryX(session.plmnView, session.plmnAnimView, panels);
         session.keepStationaryX(session.qsButtonsContainer, null, panels);
+    }
+
+    private static boolean isDescendantOf(View child, View ancestor) {
+        if (child == null || ancestor == null || child == ancestor) return child == ancestor;
+        ViewParent current = child.getParent();
+        while (current instanceof View view) {
+            if (view == ancestor) return true;
+            current = view.getParent();
+        }
+        return false;
     }
 
     private Object interceptSetSlideFraction(XposedInterface.Chain chain) throws Throwable {
