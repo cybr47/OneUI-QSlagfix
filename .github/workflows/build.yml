@@ -2,7 +2,7 @@ name: Build APKs
 
 on:
   push:
-    branches: [main, no-swipe-panel-switch, area-increase, cust, tgtr, fix/tgtr-shade-window-pull, fix/tgtr-header-transition-flicker]
+    branches: [main, no-swipe-panel-switch, area-increase, cust, tgtr, fix/tgtr-shade-window-pull, fix/tgtr-header-transition-flicker, fix/horizontal-full-distance-fade]
   pull_request:
     branches: [main, no-swipe-panel-switch, area-increase, cust]
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         if: github.event_name != 'pull_request'
         with:
-          name: apks-header-transition-flicker-${{ github.sha }}
+          name: apks-horizontal-full-distance-fade-${{ github.sha }}
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
