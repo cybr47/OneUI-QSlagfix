@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: apk-${{ github.workflow }}-${{ github.ref }}
+  group: apk-${{ github.workflow }}-${{ github.ref }}-glass-fade-perf
   cancel-in-progress: true
 
 jobs:
