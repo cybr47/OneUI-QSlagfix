@@ -6,20 +6,17 @@ SHA-256: `81a9e975a9a88a92a94f855c1c4a69dc68dcff28b5e28adfac5adc8ebebc68b4`.
 
 All five DEX files were enumerated with Androguard 4.1.4. Relevant methods were disassembled and decompiled with DAD. Where DAD produces ambiguous control flow/types, DEX instructions are authoritative. The proprietary APK/decompiled Samsung source is not redistributed.
 
-## Existing patch and changes
+## v2 scope: gesture handling only
 
-Starting main: `68fd7d47cc6b466690874bab1057e2eb59815e75`.
-It contains exactly one optimization: after constructing the legacy media renderer, set its integer stepX from 2 to 10. There are no existing blur, notification layout, panel animation or general QS patches.
+The original OneUI-QSlagfix main branch modified media waveform sampling (`stepX`) in
+Samsung's visualizer. **ShadeSwitch v2 does not install any of those sampling
+hooks.** Its only optional SystemUI hooks are the header-only vertical panel
+gesture and the Together-style compact Quick QS row. With both toggles disabled,
+there are no SystemUI method hooks installed.
 
-| APK class | Verified contract | Result |
-| --- | --- | --- |
-| `com.android.systemui.media.audiovisseekbar.renderer.track.auto.MultiWaveAreaTrackRenderer` | `<init>(android.view.View, AudioVisSeekBarConfig)`; `stepX:int` | Present in classes2.dex; original hook still matches. |
-| `com.android.systemui.media.colorfulwave.renderer.MultiWaveAreaTrackRenderer$WaveStyle` | `<init>(int,int,int,PorterDuff.Mode,float,float,float,float,float,float,float,int)`; `stepX:int` | The additional wave path stores sampling step per style. |
-| `com.android.systemui.media.colorfulwave.renderer.MultiWaveAreaTrackRenderer` | `waveStyles:java.util.List`; `setWaveStyles(java.util.List):void`; `draw(android.graphics.Canvas):void` | draw clamps stepX to 1..8. Style updates copy mutable fields into existing instances. |
-
-Main retains a minimum of 10 on the legacy renderer and uses a minimum of 8 on colourful styles. Values already higher are preserved. The colourful draw path clamps values to 8, so 10 would not give a larger effective step. Hook the concrete style constructor (the Kotlin default constructor delegates to it), and reapply after setWaveStyles. Nothing hooks draw, frame callbacks or a repeating timer.
-
-This extends the upstream sampling strategy; it is not evidence that wave sampling causes all QS stutters. Which renderer is active depends on Samsung's media-player path/settings. No older Samsung APK was supplied for a full version-to-version diff.
+The previous renderer investigation remains in the repository's historical
+branches. There is no evidence that coarsening visualizer sampling is necessary
+to improve native horizontal panel transitions.
 
 ## Panel switching contracts for the separate branch
 
@@ -54,7 +51,7 @@ The native interception caller is explicitly deoptimized to preserve its hooked 
 
 In classes3.dex, StatusBarState.toString maps 0 to SHADE, 1 to KEYGUARD and 2 to SHADE_LOCKED. SecQSImplAnimatorBase.onStateChanged and the concrete QS animator callbacks assign that value to QsAnimatorState.state. SecPanelSplitHelper.onIntercept rejects state 1, while slide contains explicit status-2 branches for native vertical switching from the locked shade, including qs_swipe_ver_keyguard analytics.
 
-The module previously required status 0. Version 2.3.1 accepts 0 or 2 while keeping native interception and all other availability checks. The wave sampling hooks have no status-state filter and already cover matching renderers in the locked shade.
+The module previously required status 0. The area-increase adapter (also reused by v2) accepts 0 or 2 while keeping native interception and all other availability checks. No media-wave sampling hooks are installed in v2.
 
 ## Framework API
 
