@@ -16,7 +16,7 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 9
-        versionName = "2.5.0-glass-motion"
+        versionName = "2.5.0-glass-motion-diag"
     }
 
     buildTypes {
