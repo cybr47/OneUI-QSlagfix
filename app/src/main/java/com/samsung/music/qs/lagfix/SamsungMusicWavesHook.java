@@ -1,15 +1,20 @@
 package com.samsung.music.qs.lagfix;
 
-import android.graphics.PorterDuff;
+import android.content.SharedPreferences;
 import android.util.Log;
-import android.view.View;
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.List;
 import io.github.libxposed.api.XposedModule;
 
-/** One UI 9 media wave sampling, installed once in the SystemUI main process. */
+/**
+ * ShadeSwitch v2: clean area-increase base and tgtr settings.
+ *
+ * OFF (default): Do not modify Samsung's native horizontal panel gestures,
+ * animation fractions, view transforms or frame callbacks.
+ *
+ * ON: Install the original area-increase NoSwipePanelHooks (header-only
+ * vertical pulls with horizontal panel switching disabled).
+ *
+ * Together-mode quick-QS row hiding is an independent preference.
+ */
 public final class SamsungMusicWavesHook extends XposedModule {
     private boolean targetProcess;
     private boolean installed;
@@ -34,104 +39,56 @@ public final class SamsungMusicWavesHook extends XposedModule {
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
-        if (!targetProcess || installed || !"com.android.systemui".equals(param.getPackageName())) {
+        if (!targetProcess || installed
+                || !"com.android.systemui".equals(param.getPackageName())) {
             return;
         }
         installed = true;
-        if (BuildConfig.DEBUG) debug("SystemUI package ready: installing hooks", null);
-        // Visible in release builds: if this line is missing from the LSPosed log, the module never loaded.
-        note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME + " (" + BuildConfig.BUILD_TYPE + ")");
+        boolean vertical = readPreference(ShadeSwitchPrefs.KEY_VERTICAL_SWIPE);
+        boolean hideQuickQs = readPreference(ShadeSwitchPrefs.KEY_HIDE_QUICK_QS_ROW);
+
+        note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME
+                + " (" + BuildConfig.BUILD_TYPE + ", gestures="
+                + (vertical ? "header-only-vertical" : "stock-horizontal")
+                + ", hideQuickQsRow=" + hideQuickQs + ")");
+
         ClassLoader loader = param.getClassLoader();
-        installLegacyWave(loader);
-        installColorfulWave(loader);
-        NoSwipePanelHooks.install(this, loader);
-    }
-
-    private void installLegacyWave(ClassLoader loader) {
-        try {
-            Class<?> renderer = Class.forName(
-                    "com.android.systemui.media.audiovisseekbar.renderer.track.auto.MultiWaveAreaTrackRenderer",
-                    false, loader);
-            Class<?> config = Class.forName(
-                    "com.android.systemui.media.audiovisseekbar.config.AudioVisSeekBarConfig", false, loader);
-            Field step = intField(renderer, "stepX");
-            Constructor<?> constructor = renderer.getDeclaredConstructor(View.class, config);
-            hook(constructor).setId("legacy-wave-sampling").intercept(chain -> {
-                Object result = chain.proceed();
-                // The original optimization. No draw/frame callbacks are hooked.
-                raiseStep(step, chain.getThisObject(), 10);
-                return result;
-            });
-            note("Legacy wave sampling installed (minimum stepX=10)");
-        } catch (Throwable error) {
-            warn("Legacy renderer unavailable; leaving that renderer unchanged", error);
+        if (vertical) {
+            // EXACT original implementation from area-increase, not tgtr's
+            // notification-body interception or custom header animation.
+            NoSwipePanelHooks.install(this, loader);
+        } else {
+            note("Stock Samsung horizontal gestures/animation preserved (no transition hooks)");
         }
-    }
 
-    private void installColorfulWave(ClassLoader loader) {
-        try {
-            Class<?> style = Class.forName(
-                    "com.android.systemui.media.colorfulwave.renderer.MultiWaveAreaTrackRenderer$WaveStyle",
-                    false, loader);
-            Class<?> renderer = Class.forName(
-                    "com.android.systemui.media.colorfulwave.renderer.MultiWaveAreaTrackRenderer", false, loader);
-            Field step = intField(style, "stepX");
-            Field styles = renderer.getDeclaredField("waveStyles");
-            styles.setAccessible(true);
-            Constructor<?> constructor = style.getDeclaredConstructor(
-                    int.class, int.class, int.class, PorterDuff.Mode.class,
-                    float.class, float.class, float.class, float.class, float.class,
-                    float.class, float.class, int.class);
-            Method setStyles = renderer.getDeclaredMethod("setWaveStyles", List.class);
-            // Resolve the complete contract before registering either hook.
-            hook(constructor).setId("colorful-wave-sampling").intercept(chain -> {
-                Object result = chain.proceed();
-                // draw() clamps this renderer's stepX to 1..8; 10 would still become 8.
-                raiseStep(step, chain.getThisObject(), 8);
-                return result;
-            });
-            hook(setStyles).setId("colorful-wave-style-updates").intercept(chain -> {
-                Object result = chain.proceed();
-                // Samsung copies mutable styles into existing instances on album/theme changes.
-                Object value = styles.get(chain.getThisObject());
-                if (value instanceof List<?> list) {
-                    for (Object wave : list) {
-                        if (style.isInstance(wave)) raiseStep(step, wave, 8);
-                    }
-                }
-                return result;
-            });
-            note("Colorful wave sampling installed (effective stepX=8)");
-        } catch (Throwable error) {
-            warn("Colorful renderer unavailable; leaving that renderer unchanged", error);
+        if (hideQuickQs) {
+            TogetherQuickQsHooks.install(this, loader);
         }
+
+        // The legacy area-increase wave-sampling hooks are deliberately omitted
+        // for a clean Samsung rendering baseline. Coarsening the waveform's
+        // spatial sampling does not increase display frame rate.
     }
 
-    private static Field intField(Class<?> type, String name) throws ReflectiveOperationException {
-        Field field = type.getDeclaredField(name);
-        if (field.getType() != int.class) throw new NoSuchFieldException(name + " must be int");
-        field.setAccessible(true);
-        return field;
+    private boolean readPreference(String key) {
+        try {
+            SharedPreferences prefs = getRemotePreferences(ShadeSwitchPrefs.PREFS_GROUP);
+            if (prefs != null) return prefs.getBoolean(key, false);
+        } catch (Throwable error) {
+            warn("Unable to read remote preference " + key, error);
+        }
+        return false;
     }
 
-    private static void raiseStep(Field field, Object receiver, int minimum) throws IllegalAccessException {
-        if (field.getInt(receiver) < minimum) field.setInt(receiver, minimum);
-    }
-
-    /** Verbose diagnostics: debug builds only. */
     void debug(String message, Throwable error) {
-        if (BuildConfig.DEBUG) log(Log.INFO, "OneUI-QSlagfix", message, error);
+        if (BuildConfig.DEBUG) log(Log.INFO, "ShadeSwitch", message, error);
     }
 
-    /**
-     * Status lines that matter in every build, release included. They are written once per SystemUI
-     * start (or once per failure), never per touch event or frame.
-     */
     void note(String message) {
-        log(Log.INFO, "OneUI-QSlagfix", message, null);
+        log(Log.INFO, "ShadeSwitch", message, null);
     }
 
     void warn(String message, Throwable error) {
-        log(Log.WARN, "OneUI-QSlagfix", message, error);
+        log(Log.WARN, "ShadeSwitch", message, error);
     }
 }
