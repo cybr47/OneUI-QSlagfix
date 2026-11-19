@@ -19,6 +19,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Samsung Music QS Lag Fix"
+rootProject.name = "ShadeSwitch"
 include(":app")
 
