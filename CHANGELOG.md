@@ -1,5 +1,14 @@
 # Changelog
 
+## v2-glass-fade-perf — visual-equivalent hot-path experiment
+
+- Remove unused per-slide FrameTransform allocation and calculations.
+- Cache notification root's button/clock parentage once when a horizontal swipe begins.
+- Test exact fraction equivalence with the previous Glass Fade path in all directions and progress values.
+- Do **not** suppress QS Compose, notification layout, hardware layers, native gestures or rendering.
+- Visual appeal and functionality should match v2-glass-fade; runtime confirmation still needed.
+
+
 ## v2-glass-fade — no-bounce fade-only experiment
 
 - Keep full-screen native Samsung page slide and the tested GlassUI-style crossfade.
