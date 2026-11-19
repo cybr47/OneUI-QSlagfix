@@ -167,7 +167,8 @@ final class NoSwipePanelHooks {
             clearPending(window);
             active.remove(window);
             Object result = chain.proceed();
-            if (!Boolean.TRUE.equals(result)) return result;
+            // The blank part of the shade may return false on DOWN even though the
+            // outer window still receives the remainder of the physical gesture.
             try {
                 Object helper = targets.helperFromWindow(window);
                 if (helper == null) helper = latestHelper;
