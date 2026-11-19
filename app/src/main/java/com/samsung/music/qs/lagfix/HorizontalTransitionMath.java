@@ -4,24 +4,23 @@ package com.samsung.music.qs.lagfix;
  * Pure math and state-calculation helpers for the GlassUI-style horizontal transition between
  * Notifications and Quick Settings on One UI 9.
  *
- * <p>Outgoing opacity curve ({@link #FADE_CUTOFF} = {@code 0.50f}):
+ * <p>Outgoing opacity tracks the entire horizontal translation, rather than disappearing
+ * when the incoming page is only half visible. The full-distance smoothstep curve is:
  * <pre>
- * t = clamp01(progress / FADE_CUTOFF)
- * alpha = (1 - t * t) * (1 - t * t * t)
+ * t = clamp01(progress)
+ * alpha = 1 - t * t * (3 - 2 * t)
  * </pre>
- * This begins fading on the first visible movement, eases smoothly through {@code 0.65625} at
- * {@code 25%} drag and {@code 0.17568} at {@code 40%} drag, and reaches {@code 0.0f} when the
- * incoming panel is {@code 50%} of the way in (and stays {@code 0.0f} beyond {@code 50%}) in both
- * swipe directions. Holding the finger still holds both translation and opacity, and reversing
- * restores opacity along the exact same curve.
+ * The leaving page is {@code 84.375%} opaque at 25% drag, {@code 50%} at the midpoint,
+ * {@code 15.625%} at 75%, and only disappears at the completed slide (100%).
+ * Holding the drag holds its opacity; reversing retraces the exact same curve in both directions.
  */
 public final class HorizontalTransitionMath {
     /**
-     * Named incoming-page progress cutoff ({@code 0.50f}) at which the outgoing page eases to
-     * {@code 0.0f} opacity in both directions ({@code Notifications -> QS} and
-     * {@code QS -> Notifications}).
+     * Incoming-page progress at which the outgoing page reaches zero opacity.
+     * Kept as FADE_CUTOFF to preserve the existing hook/logging contract, but now
+     * spans the entire horizontal transition rather than stopping halfway.
      */
-    public static final float FADE_CUTOFF = 0.50f;
+    public static final float FADE_CUTOFF = 1.0f;
 
     /** {@code SecPanelSplitHelper.QS_STATE} / {@code PanelTransitionAnimator.QS_STATE}. */
     public static final int QS_STATE = 0;
@@ -95,21 +94,13 @@ public final class HorizontalTransitionMath {
     }
 
     /**
-     * Computes the outgoing page opacity for a given incoming-page drag progress in {@code [0, 1]}
-     * using the eased quintic curve over {@link #FADE_CUTOFF} ({@code 0.50f}):
-     * <pre>
-     * t = clamp01(progress / FADE_CUTOFF)
-     * alpha = (1 - t * t) * (1 - t * t * t)
-     * </pre>
+     * Computes outgoing opacity using a symmetric smoothstep over the complete slide.
+     * The midpoint remains 50% opaque, and both ends have zero opacity velocity,
+     * preventing an early blank area before the incoming panel has moved into place.
      */
     public static float outgoingAlpha(float progress) {
-        float p = clamp01(progress);
-        if (p >= FADE_CUTOFF) {
-            return 0.0f;
-        }
-        float t = clamp01(p / FADE_CUTOFF);
-        float tt = t * t;
-        return clamp01((1.0f - tt) * (1.0f - tt * t));
+        float t = clamp01(progress / FADE_CUTOFF);
+        return clamp01(1.0f - t * t * (3.0f - 2.0f * t));
     }
 
     /**
@@ -259,7 +250,7 @@ public final class HorizontalTransitionMath {
      * Therefore, whenever a horizontal transition is actively running ({@code activeHorizontalDrag == true}),
      * {@code slideFraction} MUST be pinned to {@code 0.0f} so the Compose scene renders at full
      * fidelity without internal offset/fade while the outer Android view ({@code qsRootView}) carries
-     * the rigid page translation and eased {@link #FADE_CUTOFF} opacity. Once the gesture settles,
+     * the rigid page translation and full-distance eased opacity. Once the gesture settles,
      * {@code slideFraction} returns to {@code 0.0f} for {@link #QS_STATE} or {@code 1.0f} for
      * {@link #SHADE_STATE}.
      */
