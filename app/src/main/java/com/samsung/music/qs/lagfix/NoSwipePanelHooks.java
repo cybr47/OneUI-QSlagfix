@@ -223,17 +223,18 @@ final class NoSwipePanelHooks {
                 return chain.proceed();
             }
 
-            // Clear Android's existing child touch target (media player/empty view) once.
-            // Intercepting the synthetic CANCEL must not terminate Samsung's newly
-            // established split-panel gesture; only its child view receives cancellation.
-            MotionEvent cancel = MotionEvent.obtainNoHistory(event);
-            cancel.setAction(MotionEvent.ACTION_CANCEL);
+            // Previously CANCEL was sent through the outer shade window, whose
+            // interaction controller also processes it. That needlessly disturbed
+            // the shade's header/date and scrim during a successful handoff.
+            // Cancel only the notification content's child stream; do not cancel
+            // the entire shade window's native gesture or transition state.
             suppressCancel = true;
             try {
-                chain.proceed(new Object[] { cancel });
+                if (!targets.cancelContentTouch(window, event)) {
+                    module.debug("No attached notification content to cancel", null);
+                }
             } finally {
                 suppressCancel = false;
-                cancel.recycle();
             }
 
             active.put(window, new ActivePull(pull.session, pull.helper));
