@@ -15,7 +15,7 @@ import java.util.Set;
 import org.junit.Test;
 
 /**
- * Unit tests verifying the GlassUI-style horizontal transition math, eased {@code 50%} fade curve,
+ * Unit tests verifying the GlassUI-style horizontal transition math, full-distance eased opacity curve,
  * single-pass notification card blur-alpha fading, {@link HorizontalSwipeSession} lifecycle,
  * {@link ShadeSwitchPrefs} Remote Preferences commit verification, and settings inset padding on
  * the {@code cust} branch.
@@ -246,16 +246,28 @@ public final class HorizontalTransitionMathTest {
             };
 
     @Test
-    public void fadeCutoffIs050WithEasedOpacityCurveInBothDirections() {
-        assertEquals(0.50f, HorizontalTransitionMath.FADE_CUTOFF, EPS);
+    public void fadeCompletesAt100WithSymmetricSmoothstepInBothDirections() {
+        assertEquals(1.0f, HorizontalTransitionMath.FADE_CUTOFF, EPS);
 
         assertEquals(1.0f, HorizontalTransitionMath.outgoingAlpha(0.0f), EPS);
         assertTrue(HorizontalTransitionMath.outgoingAlpha(0.01f) < 1.0f);
-        assertEquals(0.65625f, HorizontalTransitionMath.outgoingAlpha(0.25f), EPS);
-        assertEquals(0.17568f, HorizontalTransitionMath.outgoingAlpha(0.40f), EPS);
-        assertEquals(0.0f, HorizontalTransitionMath.outgoingAlpha(0.50f), EPS);
-        assertEquals(0.0f, HorizontalTransitionMath.outgoingAlpha(0.75f), EPS);
+        assertEquals(0.84375f, HorizontalTransitionMath.outgoingAlpha(0.25f), EPS);
+        assertEquals(0.648f, HorizontalTransitionMath.outgoingAlpha(0.40f), EPS);
+        assertEquals(0.50f, HorizontalTransitionMath.outgoingAlpha(0.50f), EPS);
+        assertEquals(0.15625f, HorizontalTransitionMath.outgoingAlpha(0.75f), EPS);
         assertEquals(0.0f, HorizontalTransitionMath.outgoingAlpha(1.0f), EPS);
+        assertEquals(1.0f, HorizontalTransitionMath.outgoingAlpha(-5.0f), EPS);
+        assertEquals(0.0f, HorizontalTransitionMath.outgoingAlpha(5.0f), EPS);
+        assertEquals(1.0f, HorizontalTransitionMath.outgoingAlpha(Float.NaN), EPS);
+        // Both panels must have a meaningful crossfade until the incoming page
+        // reaches the midpoint; the leaving page must never disappear early.
+        assertEquals(0.50f, HorizontalTransitionMath.outgoingAlpha(0.50f), EPS);
+        float previous = 1.0f;
+        for (int step = 1; step <= 100; step++) {
+            float alpha = HorizontalTransitionMath.outgoingAlpha(step / 100.0f);
+            assertTrue("Outgoing opacity must decrease monotonically", alpha <= previous + EPS);
+            previous = alpha;
+        }
 
         for (float p : new float[]{0.0f, 0.01f, 0.25f, 0.40f, 0.50f, 0.80f, 1.0f}) {
             assertEquals(1.0f, HorizontalTransitionMath.incomingAlpha(p), EPS);
@@ -300,7 +312,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(-0.25f * WIDTH, at25.notificationsTranslationX, EPS);
         assertEquals(+0.75f * WIDTH, at25.qsTranslationX, EPS);
-        assertEquals(0.65625f, at25.notificationsAlpha, EPS);
+        assertEquals(0.84375f, at25.notificationsAlpha, EPS);
         assertEquals(1.0f, at25.qsAlpha, EPS);
 
         FrameTransform at40 = FrameTransform.forSlide(
@@ -313,7 +325,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(-0.40f * WIDTH, at40.notificationsTranslationX, EPS);
         assertEquals(+0.60f * WIDTH, at40.qsTranslationX, EPS);
-        assertEquals(0.17568f, at40.notificationsAlpha, EPS);
+        assertEquals(0.648f, at40.notificationsAlpha, EPS);
         assertEquals(1.0f, at40.qsAlpha, EPS);
 
         FrameTransform atCutoff = FrameTransform.forSlide(
@@ -326,7 +338,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(-0.50f * WIDTH, atCutoff.notificationsTranslationX, EPS);
         assertEquals(+0.50f * WIDTH, atCutoff.qsTranslationX, EPS);
-        assertEquals(0.0f, atCutoff.notificationsAlpha, EPS);
+        assertEquals(0.50f, atCutoff.notificationsAlpha, EPS);
         assertEquals(1.0f, atCutoff.qsAlpha, EPS);
 
         FrameTransform postCutoff = FrameTransform.forSlide(
@@ -339,7 +351,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(-0.80f * WIDTH, postCutoff.notificationsTranslationX, EPS);
         assertEquals(+0.20f * WIDTH, postCutoff.qsTranslationX, EPS);
-        assertEquals(0.0f, postCutoff.notificationsAlpha, EPS);
+        assertEquals(0.104f, postCutoff.notificationsAlpha, EPS);
         assertEquals(1.0f, postCutoff.qsAlpha, EPS);
     }
 
@@ -357,7 +369,7 @@ public final class HorizontalTransitionMathTest {
         assertFalse(at25.movingToQs);
         assertEquals(+0.25f * WIDTH, at25.qsTranslationX, EPS);
         assertEquals(-0.75f * WIDTH, at25.notificationsTranslationX, EPS);
-        assertEquals(0.65625f, at25.qsAlpha, EPS);
+        assertEquals(0.84375f, at25.qsAlpha, EPS);
         assertEquals(1.0f, at25.notificationsAlpha, EPS);
 
         FrameTransform at40 = FrameTransform.forSlide(
@@ -370,7 +382,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(+0.40f * WIDTH, at40.qsTranslationX, EPS);
         assertEquals(-0.60f * WIDTH, at40.notificationsTranslationX, EPS);
-        assertEquals(0.17568f, at40.qsAlpha, EPS);
+        assertEquals(0.648f, at40.qsAlpha, EPS);
         assertEquals(1.0f, at40.notificationsAlpha, EPS);
 
         FrameTransform atCutoff = FrameTransform.forSlide(
@@ -383,7 +395,7 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(+0.50f * WIDTH, atCutoff.qsTranslationX, EPS);
         assertEquals(-0.50f * WIDTH, atCutoff.notificationsTranslationX, EPS);
-        assertEquals(0.0f, atCutoff.qsAlpha, EPS);
+        assertEquals(0.50f, atCutoff.qsAlpha, EPS);
         assertEquals(1.0f, atCutoff.notificationsAlpha, EPS);
     }
 
@@ -400,7 +412,7 @@ public final class HorizontalTransitionMathTest {
         assertTrue(toQsAt25.movingToQs);
         assertEquals(+0.25f * WIDTH, toQsAt25.notificationsTranslationX, EPS);
         assertEquals(-0.75f * WIDTH, toQsAt25.qsTranslationX, EPS);
-        assertEquals(0.65625f, toQsAt25.notificationsAlpha, EPS);
+        assertEquals(0.84375f, toQsAt25.notificationsAlpha, EPS);
         assertEquals(1.0f, toQsAt25.qsAlpha, EPS);
 
         FrameTransform toShadeAt40 = FrameTransform.forSlide(
@@ -414,7 +426,7 @@ public final class HorizontalTransitionMathTest {
         assertFalse(toShadeAt40.movingToQs);
         assertEquals(-0.40f * WIDTH, toShadeAt40.qsTranslationX, EPS);
         assertEquals(+0.60f * WIDTH, toShadeAt40.notificationsTranslationX, EPS);
-        assertEquals(0.17568f, toShadeAt40.qsAlpha, EPS);
+        assertEquals(0.648f, toShadeAt40.qsAlpha, EPS);
         assertEquals(1.0f, toShadeAt40.notificationsAlpha, EPS);
     }
 
@@ -439,10 +451,10 @@ public final class HorizontalTransitionMathTest {
                 false);
         assertEquals(drag40.qsTranslationX, hold40.qsTranslationX, EPS);
         assertEquals(drag40.notificationsTranslationX, hold40.notificationsTranslationX, EPS);
-        assertEquals(0.17568f, hold40.notificationsAlpha, EPS);
+        assertEquals(0.648f, hold40.notificationsAlpha, EPS);
         assertEquals(1.0f, hold40.qsAlpha, EPS);
 
-        // Drag past 50% (to 60%), hold, then reverse back through 40% and 25%
+        // Drag past midpoint (to 60%), then reverse back through 40% and 25%
         FrameTransform drag60 = FrameTransform.forSlide(
                 HorizontalTransitionMath.TRANSITION_STATE,
                 0.60f,
@@ -451,7 +463,7 @@ public final class HorizontalTransitionMathTest {
                 HorizontalTransitionMath.QS_STATE,
                 WIDTH,
                 false);
-        assertEquals(0.0f, drag60.notificationsAlpha, EPS);
+        assertEquals(0.352f, drag60.notificationsAlpha, EPS);
 
         FrameTransform reverse40 = FrameTransform.forSlide(
                 HorizontalTransitionMath.TRANSITION_STATE,
@@ -464,7 +476,7 @@ public final class HorizontalTransitionMathTest {
         assertEquals(WIDTH, reverse40.qsTranslationX - reverse40.notificationsTranslationX, EPS);
         assertEquals(-0.40f * WIDTH, reverse40.notificationsTranslationX, EPS);
         assertEquals(+0.60f * WIDTH, reverse40.qsTranslationX, EPS);
-        assertEquals(0.17568f, reverse40.notificationsAlpha, EPS);
+        assertEquals(0.648f, reverse40.notificationsAlpha, EPS);
         assertEquals(1.0f, reverse40.qsAlpha, EPS);
 
         FrameTransform reverse25 = FrameTransform.forSlide(
@@ -475,7 +487,7 @@ public final class HorizontalTransitionMathTest {
                 HorizontalTransitionMath.QS_STATE,
                 WIDTH,
                 false);
-        assertEquals(0.65625f, reverse25.notificationsAlpha, EPS);
+        assertEquals(0.84375f, reverse25.notificationsAlpha, EPS);
         assertEquals(-0.25f * WIDTH, reverse25.notificationsTranslationX, EPS);
         assertEquals(+0.75f * WIDTH, reverse25.qsTranslationX, EPS);
 
@@ -488,7 +500,7 @@ public final class HorizontalTransitionMathTest {
                 HorizontalTransitionMath.SHADE_STATE,
                 WIDTH,
                 false);
-        assertEquals(0.65625f, qsReverse25.qsAlpha, EPS);
+        assertEquals(0.84375f, qsReverse25.qsAlpha, EPS);
         assertEquals(1.0f, qsReverse25.notificationsAlpha, EPS);
     }
 
@@ -552,29 +564,29 @@ public final class HorizontalTransitionMathTest {
     public void notificationBlurAlphaFollowsOutgoingFadeOnceAndPreservesExistingRowOpacity() {
         // 1. Full-opacity notification rows (both ordinary cards and the large media card) fade
         //    their BackgroundBlurDrawable in exact lockstep with their Canvas content along the
-        //    50% eased curve (reaching 0 at 50% drag and restoring along the same curve on reversal).
+        //    full-distance eased curve (reaching zero at 100% drag, with exact reversal symmetry).
         assertEquals(
                 1.0f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.0f), 1.0f),
                 EPS);
         assertEquals(
-                0.65625f,
+                0.84375f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.25f), 1.0f),
                 EPS);
         assertEquals(
-                0.17568f,
+                0.648f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.40f), 1.0f),
                 EPS);
         assertEquals(
-                0.0f,
+                0.50f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.50f), 1.0f),
                 EPS);
         assertEquals(
-                0.0f,
+                0.15625f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.75f), 1.0f),
                 EPS);
@@ -588,24 +600,24 @@ public final class HorizontalTransitionMathTest {
                         HorizontalTransitionMath.outgoingAlpha(0.0f), rowAlpha),
                 EPS);
         assertEquals(
-                0.65625f * rowAlpha,
+                0.84375f * rowAlpha,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.25f), rowAlpha),
                 EPS);
         assertEquals(
-                0.17568f * rowAlpha,
+                0.648f * rowAlpha,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.40f), rowAlpha),
                 EPS);
         assertEquals(
-                0.0f,
+                0.50f * rowAlpha,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.50f), rowAlpha),
                 EPS);
 
         // 3. Appear-animation contentAlpha is also respected when drawingAppearAnimation is true.
         assertEquals(
-                0.65625f * 0.50f,
+                0.84375f * 0.50f,
                 HorizontalTransitionMath.effectiveNotificationBlurAlpha(
                         HorizontalTransitionMath.outgoingAlpha(0.25f), 1.0f, true, 0.50f),
                 EPS);
