@@ -14,10 +14,22 @@ import java.lang.reflect.Method;
 final class NotificationPullTargets {
     private final Class<?> panelType, stackType, notificationRow;
     private final Field panelController, controllerHelper, shadeRoot;
+    private final Field windowEventHandler, outerController, stackController, stackSplitHelper;
     private final Method childAtRawPosition, isMediaNotification;
     private WeakReference<View> cachedPanel, cachedStack;
 
     NotificationPullTargets(ClassLoader loader) throws ReflectiveOperationException {
+        Class<?> windowType = loader.loadClass("com.android.systemui.shade.NotificationShadeWindowView");
+        windowEventHandler = NativePanels.field(windowType, "mInteractionEventHandler");
+        Class<?> eventHandlerType = loader.loadClass(
+                "com.android.systemui.shade.NotificationShadeWindowViewController$1");
+        outerController = NativePanels.field(eventHandlerType, "this$0");
+        Class<?> controllerType = loader.loadClass(
+                "com.android.systemui.shade.NotificationShadeWindowViewController");
+        stackController = NativePanels.field(controllerType, "mNotificationStackScrollLayoutController");
+        Class<?> stackControllerType = loader.loadClass(
+                "com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayoutController");
+        stackSplitHelper = NativePanels.field(stackControllerType, "mPanelSplitHelper");
         panelType = loader.loadClass("com.android.systemui.shade.NotificationPanelView");
         panelController = NativePanels.field(panelType, "secNPVcontroller");
         controllerHelper = NativePanels.field(panelController.getType(), "panelSplitHelper");
@@ -31,6 +43,15 @@ final class NotificationPullTargets {
     }
 
     Object helperFromWindow(View window) throws IllegalAccessException {
+        // Verified One UI 9 window -> controller -> stack-controller -> splitter path.
+        // It remains available when a separate-mode Compose layout has no NPV child.
+        Object eventHandler = windowEventHandler.get(window);
+        if (eventHandler != null) {
+            Object controller = outerController.get(eventHandler);
+            Object stack = controller == null ? null : stackController.get(controller);
+            Object split = stack == null ? null : stackSplitHelper.get(stack);
+            if (split != null) return split;
+        }
         View panel = cachedPanel == null ? null : cachedPanel.get();
         if (panel == null || !panel.isAttachedToWindow() || panel.getRootView() != window.getRootView()) {
             panel = find(window, panelType);
