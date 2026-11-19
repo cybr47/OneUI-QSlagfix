@@ -17,11 +17,11 @@ Version 2.3.0-native-drag replaces the automatic panel toggle on this branch wit
 
 A native release animation in progress follows Samsung's policy for new touches. The module no longer snaps an earlier animation to its destination or forces another change.
 
-## Lockscreen panels and media sampling
+## Lockscreen panels
 
 The adapter accepts status SHADE (0) and SHADE_LOCKED (2). The supplied APK's StatusBarState.toString identifies state 2 as SHADE_LOCKED, and the QS animator callbacks mirror the status into QsAnimatorState.state. Samsung's native onIntercept excludes KEYGUARD (1) but permits the already opened locked shade. The module keeps that native distinction and its existing split-panel/expanded/detail/disabled/pop-over checks.
 
-The media-wave hooks already run on renderer construction and style updates throughout SystemUI, with no status-bar-state filter. Matching renderers in lockscreen panels therefore receive the same sampling adjustment without additional hooks.
+ShadeSwitch v2 does not install any media-wave or legacy QS lagfix hooks, including on the lockscreen.
 
 ## Start area
 
@@ -53,7 +53,7 @@ Session state is reset by native initialization and cleared on release/cancellat
 
 ## ART and framework requirements
 
-Modern libxposed API 102 is required. All reflection contracts resolve before hooks register; a registration failure rolls back the group. SecPanelSplitHelper.onIntercept is explicitly deoptimized so ART cannot bypass the hooked initiateSlide, slidePointerDeltas and updateDirection through inlining. Live handleTouch, renderer and release-animation methods are not explicitly deoptimized or replaced.
+Modern libxposed API 102 is required. All reflection contracts resolve before hooks register; a registration failure rolls back the group. SecPanelSplitHelper.onIntercept is explicitly deoptimized so ART cannot bypass the hooked initiateSlide, slidePointerDeltas and updateDirection through inlining. Live handleTouch and release-animation methods are not explicitly deoptimized or replaced; v2 does not intercept any media renderer.
 
 Verbose diagnostics are debug-only and bounded to the first eight initial touches. Both APKs retain the short module-loaded and hook-install status lines, plus warnings on failure.
 
@@ -82,3 +82,7 @@ On the phone, check:
 Install one branch APK, enable System UI / com.android.systemui scope and reboot. Both variants use the repository signing key; versionCode 8 permits an update over 2.3.0 or 2.2.x signed with the same key.
 
 Disable the module and reboot for stock behavior. Install main for media sampling only; its lower versionCode may require uninstalling the experimental APK first. A source rollback can revert the native-drag commit without changing the other branches.
+
+## v2 mode note
+
+This is the original area-increase vertical-gesture implementation, installed **only if** the vertical-swipe toggle is enabled. When disabled, Samsung's stock horizontal panel switching is used with no custom horizontal gesture or animation hooks. Together Quick QS row hiding is an independent feature.
