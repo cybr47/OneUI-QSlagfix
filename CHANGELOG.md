@@ -1,5 +1,13 @@
 # Changelog
 
+## v2-glass-motion (experimental)
+
+- Adapt a spring-style settle curve to Samsung's native horizontal ValueAnimator without creating a second view animator.
+- Reuse Samsung's native touch stream, panel state, gestures and UI; leave GlassUI custom panels and controls out.
+- No change to the area-increase vertical header gesture or Together-style Quick QS setting.
+- Includes JVM progress/boundary tests and device-test instructions. Does not claim improved rendering FPS; further profiling required.
+
+
 ## v2 — clean area-increase restart
 
 - Started `v2` from the existing `area-increase` branch.
