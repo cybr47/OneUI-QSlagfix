@@ -1,38 +1,26 @@
-# One UI QS Lag Fix
+# ShadeSwitch v2
 
-SystemUI-only libxposed module targeting the supplied Samsung One UI 9 Indian-ROM SystemUI 17 APK. See [APK findings](docs/ONEUI9-ANALYSIS.md) and [changelog](CHANGELOG.md).
+A streamlined LSPosed module for **Samsung One UI 9 / Android 17**. This branch starts from the `area-increase` implementation and reuses the settings activity and Together-mode Quick QS row option from `tgtr`.
 
-## Branches
-- **main**: media-wave sampling only; Samsung's panel gestures.
-- **no-swipe-panel-switch**: separate gesture variant: horizontal panel switching disabled; repeated downward header swipes toggle panels. See [gesture behavior, assumptions and rollback](docs/NO-SWIPE-PANEL-SWITCH.md).
-- **area-increase**: Samsung's interactive drag-and-release panel switching across the full clock/date and QS button row, including split panels opened from the lockscreen. Hold, reverse or release the drag; ordinary button taps stay native. Horizontal panel switching is disabled.
+## Features
 
-The original optimization reduces the legacy media progress wave's sampling resolution (stepX=10). One UI 9 also contains a colourful renderer whose per-style step is clamped to 1..8; this fork uses 8 and reapplies after style updates. This reduces sampling work. Smoothness and battery improvements have not been measured on-device.
+- **Vertical swipe to switch panels — OFF (default):** Leave Samsung's original **Separate mode** horizontal swipe recognizer, animator and release/fling behavior **untouched**. No GlassUI replacement, custom fade, manually increased frame count or custom touch interception. Native performance is not yet optimized or verified.
+- **Vertical swipe to switch panels — ON:** Use the **original `area-increase`** header/date-row downward pull to change between Notifications and Quick Settings in Separate mode, disabling horizontal panel switching while this option is selected. **Notification body and media card are not gesture start areas.** Samsung retains the actual drag/release animation.
+- **Together style → Hide Quick QS row:** Optional independent switch, ported from `tgtr`. Hides compact tiles without changing Samsung's full Quick Settings screen. It is effective in Together style and does not change Separate mode.
 
-## Install and runtime rollback
-1. Use an LSPosed implementation supporting **modern libxposed API 102**.
-2. Install one branch APK, enable it with **System UI / com.android.systemui** scope and reboot.
-3. All branches share one application ID; install only one variant.
+The settings UI uses LSPosed Remote Preferences; restart SystemUI after toggling options. Both switches are off by default on a new install. Existing settings with the same keys are retained when upgrading.
 
-Disable this module in LSPosed and reboot to restore stock behavior. To keep media sampling and discard the gesture experiment, install the main APK (same certificate; its older versionCode may require uninstalling the branch APK first), enable it and reboot. If SystemUI is unusable, follow your LSPosed implementation's documented module-disable/recovery procedure.
+## Source separation
 
-## Build
-JDK 21, SDK platform 36 and build-tools 36.0.0:
-```sh
-./gradlew :app:testDebugUnitTest :app:lintDebug :app:lintRelease :app:assembleDebug :app:assembleRelease
-ANDROID_HOME=/path/to/android-sdk bash scripts/package-apks.sh
-```
+- Original `area-increase` files left unchanged: `NativePanels.java`, `NoSwipePanelHooks.java`, `SwipeSession.java`, and `InitialYGate.java`.
+- Ported from `tgtr`: `ShadeSwitchSettingsActivity.java`, `ShadeSwitchPrefs.java`, `TogetherQuickQsHooks.java`, and settings resources/configuration.
+- `SamsungMusicWavesHook.java` installs the **header-only** hooks **only when enabled** and the Together compact-row hook **only when enabled**. When vertical gestures are disabled, **no horizontal animation hooks are installed**.
+- Legacy media-wave stepX sampling hooks are not installed in v2. They remain in the original `area-increase` branch and are not assumed to increase frame rate.
 
-The **Build APKs** Actions workflow runs on pushes to all three branches and supports manual dispatch. Artifacts contain:
-- `app-debug.apk`: debuggable, verbose module diagnostics enabled.
-- `app-release.apk`: non-debuggable, not minified (R8 is off so it runs the same code path as the debug APK), verbose diagnostics inactive.
-- `BUILD.txt`, signing certificate details and `SHA256SUMS.txt`.
+## Horizontal animation performance — baseline first
 
-Both APK variants are signed with the same repository keystore on push/manual builds. Repository secrets `KEYSTORE_BASE64` and `KEYSTORE_PASSWORD` are required; `KEYSTORE_ALIAS` and `KEY_PASSWORD` are optional (key password defaults to store password). Missing credentials fail the build before compilation; there is no test-key fallback. Certificate verification confirms both APK signatures match and records the public SHA-256 fingerprint in `SIGNING.txt`. The private keystore is temporary and is never committed or uploaded. PR builds run checks without accessing signing secrets or publishing signed APKs. An older test-signed installation must be uninstalled once before installing an APK signed with the repository key.
+The user reported frame jitter in Samsung's original horizontal panel switch, especially while the media card is shown. **v2 does not claim to fix that issue yet.** Frame rate is limited by display refresh and work per frame; fabricating additional interpolation frames cannot remove CPU/GPU stalls. An optimization should follow a device trace (ideally Perfetto with SurfaceFlinger FrameTimeline, SystemUI render thread and CPU scheduling), comparing transitions with and without media playback/card visible. Fix the observed bottleneck without replacing Samsung's animation.
 
-## Source rollback
-Pre-work main: `68fd7d47cc6b466690874bab1057e2eb59815e75`.
-Use `git revert <commit>` then a normal push for a history-preserving rollback. Stage 2 is confined to its branch and can be discarded without modifying main.
+## Compatibility
 
-## Attribution and license
-The original stepX optimization is from Samsung QS Lag Fix / OneUI-QSlagfix, originally targeting UN1CA 3. See [NOTICE](NOTICE) and [LICENSE](LICENSE) (Apache License 2.0).
+Built using Android API 37, Java 17, libxposed API 102 with the LSPosed service dependency. The module targets `com.android.systemui` on the validated One UI 9 build documented in `docs/ONEUI9-ANALYSIS.md`. This project modifies proprietary UI behavior; test on-device before relying on it.
