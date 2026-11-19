@@ -1,43 +1,6 @@
 {
   "apk_sha256": "81a9e975a9a88a92a94f855c1c4a69dc68dcff28b5e28adfac5adc8ebebc68b4",
   "classes": {
-    "Lcom/android/systemui/media/audiovisseekbar/renderer/track/auto/MultiWaveAreaTrackRenderer;": {
-      "fields": {
-        "stepX": "I"
-      },
-      "methods": [
-        {
-          "name": "<init>",
-          "descriptor": "(Landroid/view/View; Lcom/android/systemui/media/audiovisseekbar/config/AudioVisSeekBarConfig;)V"
-        }
-      ]
-    },
-    "Lcom/android/systemui/media/colorfulwave/renderer/MultiWaveAreaTrackRenderer$WaveStyle;": {
-      "fields": {
-        "stepX": "I"
-      },
-      "methods": [
-        {
-          "name": "<init>",
-          "descriptor": "(I I I Landroid/graphics/PorterDuff$Mode; F F F F F F F I)V"
-        },
-        {
-          "name": "<init>",
-          "descriptor": "(I I I Landroid/graphics/PorterDuff$Mode; F F F F F F F I I Lkotlin/jvm/internal/DefaultConstructorMarker;)V"
-        }
-      ]
-    },
-    "Lcom/android/systemui/media/colorfulwave/renderer/MultiWaveAreaTrackRenderer;": {
-      "fields": {
-        "waveStyles": "Ljava/util/List;"
-      },
-      "methods": [
-        {
-          "name": "setWaveStyles",
-          "descriptor": "(Ljava/util/List;)V"
-        }
-      ]
-    },
     "Lcom/android/systemui/shade/NotificationShadeWindowView;": {
       "fields": {
         "mInteractionEventHandler": "Lcom/android/systemui/shade/NotificationShadeWindowViewController$1;"
