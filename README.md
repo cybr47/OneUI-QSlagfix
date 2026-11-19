@@ -5,7 +5,7 @@ An LSPosed module (`io.github.libxposed.api:101.0.0`) for **Samsung One UI 9 / A
 > **Branch Architecture**
 > - On `tgtr`, enable **Vertical swipe to switch panels** in ShadeSwitch and select **Separate** in Samsung’s Panel settings. Pull down over empty space or the media player to open Quick Settings. Pulling on a notification expands it. Pull down on the Quick Settings header to return to Notifications, or swipe up from the panel background to close.
 > - `tgtr` adds **Together style → Hide Quick QS row** in ShadeSwitch settings. Enable it in LSPosed, restart SystemUI, and select **Together** in Samsung’s Panel settings. The first pull shows the notification panel without the compact tile row. A second pull opens full Quick Settings. Samsung’s **Brightness control** setting governs the slider.
-> - `cust`: Keeps Samsung's native horizontal gesture enabled by default and drives both pages with rigid full-width translation and a symmetric `FADE_CUTOFF = 0.45f` outgoing fade while keeping the stock Compose Quick Settings scene drawable throughout the drag.
+> - `cust`: Keeps Samsung's native horizontal gesture enabled by default and drives both pages with rigid full-width translation and a symmetric full-distance (`FADE_CUTOFF = 1.0f`) outgoing fade while keeping the stock Compose Quick Settings scene drawable throughout the drag.
 > - `area-increase`: Separate vertical-only variant (`NoSwipePanelHooks`) that disables horizontal panel switching and splits top-down pull zones at `60%` / `40%`.
 
 ---
@@ -16,9 +16,9 @@ An LSPosed module (`io.github.libxposed.api:101.0.0`) for **Samsung One UI 9 / A
    - In normal panel order (`SecPanelSplitHelper.isReversed() == false`), swiping left brings **Quick Settings** in from the right (`+width -> 0`) and moves **Notifications** to the left (`0 -> -width`); swiping right brings **Notifications** in from the left (`-width -> 0`) and moves **Quick Settings** to the right (`0 -> +width`).
    - Respects Samsung's reversed panel order (`isReversed() == true`).
    - Preserves Samsung's native gesture ownership for QS tile paging, notification dismissal, brightness/volume sliders, header taps, and shade closing, plus Samsung's native release/reversal/fling completion logic (`PanelSlideEventHandler.createSlideAnimatorAndRun`).
-2. **Symmetric Outgoing Fade (`FADE_CUTOFF = 0.45f`) & Immediate Incoming Visibility**:
+2. **Symmetric Full-Distance Fade (`FADE_CUTOFF = 1.0f`) & Immediate Incoming Visibility**:
    - The incoming page renders at full opacity (`1.0f`) on the first frame it enters the screen.
-   - The outgoing page begins fading on the first visible movement (`progress > 0f`) and reaches `0.0f` opacity at `HorizontalTransitionMath.FADE_CUTOFF = 0.45f` (`45%` incoming drag progress) in both directions, continuing rigid translation after the fade finishes.
+   - The outgoing page begins fading on the first visible movement (`progress > 0f`) and follows a smoothstep curve over the complete slide: 84.375% opaque at 25% progress, 50% at halfway, 15.625% at 75%, and fully transparent only at 100% progress. Translation remains tied to Samsung's native gesture in both directions.
    - Holding mid-swipe holds both pages in place; reversing finger movement moves both pages back together and restores outgoing opacity along the same curve.
 3. **Stock Compose Quick Settings Render Fix**:
    - In stock One UI 9 `SystemUI.apk`, `SecQSPanelComposeAdapter.setSlideFraction(slideFraction)` drives `QuickSettingSceneViewModel` (`isPresenting = !collapsed && slideFraction < 1.0f`, `alphaOfScene = min(expFactor, 1f - slideFraction)`) and `SecQuickSettingScene` (`translationYOfScene = -5000f` when `slideFraction == 1.0f`, `translationXOfScene = slideFraction * 300f`).
