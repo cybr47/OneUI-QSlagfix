@@ -16,7 +16,7 @@ final class NativePanels {
     private static final int TRANSITION = 2;
     private static final int STATUS_SHADE = 0;
     private static final int STATUS_SHADE_LOCKED = 2;
-    final Method intercept, touch, initiate, updateDirection, rootDetached, rootConfig;
+    final Method intercept, touch, initiate, updateDirection, rootDispatch, rootDetached, rootConfig;
     private final Field owner, enabled, expanded, current, handler, panelRoot;
     private final Field qsDisabled, shadeDisabled, mode, initialY, changeSpot, intercepted, direction;
     private final Field touchSlop, headerLazy, header;
@@ -68,6 +68,7 @@ final class NativePanels {
         touch = method(helperType, "handleTouch", MotionEvent.class);
         initiate = method(handlerType, "initiateSlide", MotionEvent.class);
         updateDirection = method(handlerType, "updateDirection", float.class, float.class);
+        rootDispatch = method(rootType, "dispatchTouchEvent", MotionEvent.class);
         rootDetached = method(rootType, "onDetachedFromWindow");
         rootConfig = method(rootType, "onConfigurationChanged", android.content.res.Configuration.class);
         owner = field(handlerType, "secPanelSplitHelper");
@@ -106,6 +107,10 @@ final class NativePanels {
 
     Object handler(Object helper) throws IllegalAccessException {
         return handler.get(helper);
+    }
+
+    View panelRoot(Object helper) throws IllegalAccessException {
+        return helper == null ? null : (View) panelRoot.get(helper);
     }
 
     boolean notificationPage(Object helper) throws IllegalAccessException {
