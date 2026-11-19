@@ -8,24 +8,25 @@ import java.lang.reflect.Method;
 import io.github.libxposed.api.XposedInterface;
 
 /**
- * Headless GlassUI-inspired motion adapter for Samsung's stock separate panels.
+ * Diagnostic variant of the minimal native release-curve experiment.
  *
- * We do not animate, translate, hide or layer any View. Samsung continues to
- * own touch gestures, per-frame panel progress, all visible UI and final state.
- * The only override is the native horizontal release animator's interpolator.
+ * The original experiment did not log successful application in RELEASE APKs,
+ * so an "installed" line was not proof that Samsung ever invoked the hook.
  *
- * Native ValueAnimator already runs against Choreographer vsync timestamps.
- * Using that same animator rather than adding a second frame driver avoids
- * double updates, extra per-frame work and competing transition state.
+ * Observe only the first 12 native release attempts per SystemUI process.
+ * No per-frame hooks, extra animations or view transformations are introduced.
  */
 final class NativeHorizontalMotionHooks {
+    private static final int MAX_DIAGNOSTIC_CALLS = 12;
+
     private final SamsungMusicWavesHook module;
     private final Method createRelease;
     private final Field direction;
     private final Field nativeAnimator;
     private final TimeInterpolator springCurve = NativeSpringCurve::value;
+    private int releaseCalls;
     private int applied;
-    private int skipped;
+    private int exceptions;
 
     private NativeHorizontalMotionHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
@@ -48,41 +49,79 @@ final class NativeHorizontalMotionHooks {
             NativeHorizontalMotionHooks adapter = new NativeHorizontalMotionHooks(module, loader);
             handle = module.hook(adapter.createRelease).setId("native-horizontal-spring-release")
                     .intercept(adapter::release);
-            module.note("Native horizontal spring release hook installed (stock animator, no View hooks)");
+            module.note("Native release diagnostic hook installed; observing first "
+                    + MAX_DIAGNOSTIC_CALLS + " invocations (stock panel animation)");
         } catch (Throwable error) {
             if (handle != null) handle.unhook();
-            module.warn("Native spring release unavailable; stock Samsung animation retained", error);
+            module.warn("Native release diagnostics unavailable; stock animation retained", error);
+        }
+    }
+
+    private void report(int call, String detail) {
+        if (call <= MAX_DIAGNOSTIC_CALLS) {
+            module.note("Native release diagnostic #" + call + ": " + detail);
         }
     }
 
     private Object release(XposedInterface.Chain chain) throws Throwable {
-        // Samsung must create, start and own its animation and callbacks first.
+        // This is the important check: print a RELEASE-build line on actual
+        // interception, not only when a hook registration succeeds.
+        final int call = ++releaseCalls;
+        if (call <= MAX_DIAGNOSTIC_CALLS) {
+            report(call, "method invoked, mainThread="
+                    + (Looper.myLooper() == Looper.getMainLooper()));
+        }
+
+        // Never skip Samsung's original body. Its listeners, state updates,
+        // animator ownership and completion are mandatory.
         Object result = chain.proceed();
-        if (Looper.myLooper() != Looper.getMainLooper()) return result;
+
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            report(call, "skipped: call not on UI thread");
+            return result;
+        }
         try {
             Object handler = chain.getThisObject();
             Object nativeDirection = direction.get(handler);
-            if (!(nativeDirection instanceof Enum<?>)) return result;
+            if (!(nativeDirection instanceof Enum<?>)) {
+                report(call, "skipped: direction not an enum: " + nativeDirection);
+                return result;
+            }
             String name = ((Enum<?>) nativeDirection).name();
-            if (!"LEFT".equals(name) && !"RIGHT".equals(name)) return result;
+            if (!"LEFT".equals(name) && !"RIGHT".equals(name)) {
+                report(call, "skipped: native direction=" + name);
+                return result;
+            }
 
             Object found = nativeAnimator.get(handler);
-            if (!(found instanceof ValueAnimator)) return result;
+            if (!(found instanceof ValueAnimator)) {
+                report(call, "skipped: sliderAnimator is "
+                        + (found == null ? "null" : found.getClass().getName()));
+                return result;
+            }
             ValueAnimator animator = (ValueAnimator) found;
-            // Skip a completed, delayed, or non-running animator rather than
-            // risking a second ownership path or changing an unrelated state.
-            if (!animator.isStarted() || animator.getDuration() <= 0L) return result;
+            long duration = animator.getDuration();
+            boolean started = animator.isStarted();
+            boolean running = animator.isRunning();
+            TimeInterpolator previous = animator.getInterpolator();
+
+            if (!started || duration <= 0L) {
+                report(call, "skipped: direction=" + name
+                        + ", started=" + started + ", running=" + running
+                        + ", duration=" + duration + "ms");
+                return result;
+            }
 
             animator.setInterpolator(springCurve);
-            if (applied < 3) {
-                applied++;
-                module.debug("Native horizontal spring curve attached; duration="
-                        + animator.getDuration() + "ms direction=" + name, null);
-            }
+            applied++;
+            report(call, "APPLIED: direction=" + name
+                    + ", started=" + started + ", running=" + running
+                    + ", duration=" + duration + "ms, previous="
+                    + (previous == null ? "null" : previous.getClass().getName())
+                    + ", totalApplied=" + applied);
         } catch (ReflectiveOperationException | RuntimeException error) {
-            // A firmware or timing mismatch must not interrupt native release.
-            if (skipped++ == 0) {
-                module.warn("Native spring release skipped; keeping Samsung transition", error);
+            if (exceptions++ == 0) {
+                module.warn("Native release diagnostic exception; Samsung transition retained", error);
             }
         }
         return result;

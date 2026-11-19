@@ -51,7 +51,7 @@ for index, argument in enumerate(sys.argv[1:]):
             # line per SystemUI start, so the LSPosed log proves the module loaded and its hooks installed.
             blob = b"".join(dexes)
             for message in [b"Loaded in SystemUI, module version",
-                            b"Native horizontal spring release hook installed",
+                            b"Native release diagnostic hook installed",
                             b"Panel gesture hooks installed",
                             b"Together style compact tile row hook installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()

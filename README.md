@@ -28,3 +28,7 @@ Built using Android API 37, Java 17, libxposed API 102 with the LSPosed service 
 ## Experiment details
 
 See [GlassUI-inspired native release-motion experiment](docs/GLASS-MOTION-EXPERIMENT.md), including the five integration decisions, APK findings, limits, device tests and rollback. The stable `v2` branch is unchanged.
+
+## Diagnostic-only branch
+
+The `v2-glass-motion-diagnostics` branch logs the first 12 native release-hook invocations in the **release** APK with a `Native release diagnostic #N` prefix. It records the actual LEFT/RIGHT direction, the existing Samsung animator's started/running/duration state, and whether the interpolator was applied or skipped. No per-frame logging or extra animations are added. A plain `hook installed` log does **not** establish that the hook executes during a real swipe. This test is not the full GlassUI animator and does not promise better frame rate.
