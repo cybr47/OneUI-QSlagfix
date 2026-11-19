@@ -1,9 +1,10 @@
 [versions]
-agp = "9.1.0"
+agp = "9.1.1"
 xposed = "102.0.0"
 
 [libraries]
 xposed-api = { group = "io.github.libxposed", name = "api", version.ref = "xposed" }
+xposed-service = { group = "io.github.libxposed", name = "service", version.ref = "xposed" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
