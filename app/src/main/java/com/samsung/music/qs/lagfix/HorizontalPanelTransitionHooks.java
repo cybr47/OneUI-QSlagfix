@@ -188,7 +188,7 @@ final class HorizontalPanelTransitionHooks {
             panels.prepareDrawables(session);
 
             // 3. Save prior panel view properties (on first frame) and apply rigid full-width
-            //    translationX and eased FADE_CUTOFF (0.50f) opacity.
+            //    translationX and eased full-distance (1.0f cutoff) opacity.
             session.applyPageTransform(
                     session.qsRootView,
                     session.qsAnimView,
