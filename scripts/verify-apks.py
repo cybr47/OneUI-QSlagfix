@@ -34,7 +34,9 @@ for index, argument in enumerate(sys.argv[1:]):
         for entry in entries:
             assert "L" + entry.replace(".", "/") + ";" in classes, "module entry class missing from the APK"
         assert not any(name.startswith("Lio/github/libxposed/api/") for name in classes), "compileOnly API bundled"
-        assert "Lcom/samsung/music/qs/lagfix/HorizontalPanelTransitionHooks;" not in classes, "GlassUI animation unexpectedly bundled"
+        assert "Lcom/samsung/music/qs/lagfix/HorizontalPanelTransitionHooks;" not in classes, "Old custom page animator unexpectedly bundled"
+        assert "Lcom/samsung/music/qs/lagfix/NativeHorizontalMotionHooks;" in classes, "Native-only spring release adapter missing"
+        assert "Lcom/samsung/music/qs/lagfix/NativeSpringCurve;" in classes, "Bounded spring curve missing"
         # Prevent old QS lagfix sampling hooks from being reintroduced silently.
         # They are not needed for either v2 mode and do not control frame scheduling.
         forbidden = (b"MultiWaveAreaTrackRenderer", b"legacy-wave-sampling",
@@ -49,7 +51,7 @@ for index, argument in enumerate(sys.argv[1:]):
             # line per SystemUI start, so the LSPosed log proves the module loaded and its hooks installed.
             blob = b"".join(dexes)
             for message in [b"Loaded in SystemUI, module version",
-                            b"Stock Samsung horizontal gestures/animation preserved",
+                            b"Native horizontal spring release hook installed",
                             b"Panel gesture hooks installed",
                             b"Together style compact tile row hook installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()
