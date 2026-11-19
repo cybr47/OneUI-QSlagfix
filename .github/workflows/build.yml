@@ -2,7 +2,7 @@ name: Build APKs
 
 on:
   push:
-    branches: [main, no-swipe-panel-switch, area-increase, v2]
+    branches: [main, no-swipe-panel-switch, area-increase, v2, v2-glass-motion]
   pull_request:
     branches: [main, no-swipe-panel-switch, area-increase]
   workflow_dispatch:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         if: github.event_name != 'pull_request'
         with:
-          name: apks-v2-${{ github.sha }}
+          name: apks-v2-glass-motion-${{ github.sha }}
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
