@@ -15,7 +15,7 @@ The settings UI uses LSPosed Remote Preferences; restart SystemUI after toggling
 - Original `area-increase` files left unchanged: `NativePanels.java`, `NoSwipePanelHooks.java`, `SwipeSession.java`, and `InitialYGate.java`.
 - Ported from `tgtr`: `ShadeSwitchSettingsActivity.java`, `ShadeSwitchPrefs.java`, `TogetherQuickQsHooks.java`, and settings resources/configuration.
 - `SamsungMusicWavesHook.java` installs the **header-only** hooks **only when enabled** and the Together compact-row hook **only when enabled**. When vertical gestures are disabled, **no horizontal animation hooks are installed**.
-- Legacy media-wave stepX sampling hooks are not installed in v2. They remain in the original `area-increase` branch and are not assumed to increase frame rate.
+- **No legacy QS lagfix hooks or media-wave `stepX` adjustments are installed or bundled.** The original experimental sampling code remains only in older Git branches. The original Android package ID (`com.samsung.music.qs.lagfix`) and Xposed entry class name are retained for update compatibility; those strings do not install additional hooks.
 
 ## Horizontal animation performance — baseline first
 
