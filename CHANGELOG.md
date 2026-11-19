@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — horizontal fade timing
+
+- Outgoing panel now fades with a symmetric smoothstep across 100% of the horizontal swipe instead of disappearing halfway through. At 25%, 50%, and 75% translation its opacity is 84.375%, 50%, and 15.625% respectively.
+- Keep the incoming page fully opaque and preserve horizontal translation, per-notification blur alpha, native slide/release handling, and the separate vertical-swipe option.
+
 ## 2.4.0-cust-horizontal (versionCode 10)
 
 - Replaced `NoSwipePanelHooks` (inherited from `area-increase`) on `cust` with `HorizontalPanelTransitionHooks` and `HorizontalTransitionMath` so Samsung's native horizontal Notifications <-> Quick Settings swipe runs by default.
