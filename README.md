@@ -36,3 +36,21 @@ Disable the separate GlassUI LSPosed module so two animation systems don't inter
 The log should show `Glass fade-native horizontal hooks installed` and `Glass fade frame applied` when horizontal transitions occur.
 
 The original `v2` and `v2-glass-native` branches are unchanged. Uninstall or replace with the earlier signed `v2-glass-native` build to return to spring motion; either build shares the package ID/versionCode/signing key.
+
+## v2-glass-fade-perf: visual-equivalent hot-path optimizations
+
+This is a **small, deliberately safe performance experiment** branched from `v2-glass-fade`. It does not remove Samsung's Compose, animations, blur, notification updates, layers, or media player. We have no evidence that removing those features would be visually neutral.
+
+Changes:
+- No longer instantiate `HorizontalTransitionMath.FrameTransform` per `PanelTransitionAnimator.slide()` frame; that path calculated translations/opacity for an abandoned experimental fade and allocated a new object every callback. We instead calculate only `movingToQs` and `qsShown`, and retain the exact prior horizontal guard.
+- Determine whether the clock/date and button containers are children of the native notification root once per swipe, rather than traversing their parent chains on each animation frame.
+- Retain **exactly** the `GlassFadeMath.alpha()` curve, native progress, full-page translation, Compose fraction pinning, notification blur propagation, view-property snapshots/restore, split-mode state guards, and panel-closure handling.
+- Add a unit-test matrix comparing the new fraction/direction computation with the previous `FrameTransform.forSlide` at every 1% step, in both panel orders and swipe directions, including invalid fractions.
+
+### Performance evidence and limits
+
+The previous supplied `v2-glass-fade` trace shows 84/953 partial/full-jank shade frames (8.81%), median surface-frame span 10.94ms, p95 18.67ms. Its 14s activity interval included 1,139 Compose recomposer events, 722 Compose graphics-layer drawings and 596 notification-children layout passes. These event counts do **not** establish that any are redundant. No Compose/blur processing is suppressed on this branch.
+
+This reduces allocations and repeated traversal **inside ShadeSwitch**, not Samsung's native GPU cost; a large jank reduction or matching GlassUI's 5.1% would be speculative. Runtime testing of both appearance and frame timing is required before merging.
+
+Switching the Vertical swipe setting ON continues to use `area-increase` exclusively. This branch never installs custom horizontal hooks in that mode. `v2-glass-fade` remains untouched for rollback.

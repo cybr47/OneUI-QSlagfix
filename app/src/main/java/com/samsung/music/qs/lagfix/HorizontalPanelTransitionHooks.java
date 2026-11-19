@@ -2,7 +2,6 @@ package com.samsung.music.qs.lagfix;
 
 import android.os.Looper;
 import android.view.View;
-import android.view.ViewParent;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
@@ -108,6 +107,7 @@ final class HorizontalPanelTransitionHooks {
                 session.begin();
                 activeSessionCount++;
                 panels.bindSession(animator, session);
+                session.cachePanelAncestry();
                 if (session.composeAdapter != null) {
                     adapterSessions.put(session.composeAdapter, session);
                 }
@@ -123,25 +123,24 @@ final class HorizontalPanelTransitionHooks {
                 return chain.proceed();
             }
 
-            HorizontalTransitionMath.FrameTransform frame =
-                    HorizontalTransitionMath.FrameTransform.forSlide(
-                            transitionState,
-                            fraction,
-                            overSlideX,
-                            directionName,
-                            stateToChange,
-                            width,
-                            session.reversed);
-            if (!frame.activeHorizontal) {
+            // The old FrameTransform.forSlide() allocated one object per
+            // animation callback and calculated four translation/alpha fields
+            // which this fade-only renderer never used. Keep its exact
+            // horizontal-state guard and direction/fraction math.
+            if (!HorizontalTransitionMath.isHorizontalDirection(directionName)) {
                 return chain.proceed();
             }
+            boolean movingToQs = HorizontalTransitionMath.isTransitionToQs(
+                    stateToChange, directionName, session.reversed);
+            float qsShown = HorizontalTransitionMath.qsShownFraction(
+                    fraction, movingToQs);
 
             pinComposeSlideFractionOnce(session);
             panels.prepareDrawables(session);
-            applyGlassFadeFrame(session, frame.qsShown, width);
+            applyGlassFadeFrame(session, qsShown, width);
             if (observedHorizontalFrames++ < 3) {
                 module.note("Glass fade frame applied; fraction=" + fraction
-                        + " toQs=" + frame.movingToQs + " width=" + width);
+                        + " toQs=" + movingToQs + " width=" + width);
             }
             return null;
         } catch (ReflectiveOperationException | RuntimeException error) {
@@ -163,27 +162,17 @@ final class HorizontalPanelTransitionHooks {
                 qsX, qsAlpha, true, panels);
         session.applyPageTransform(session.shadeRootView, session.shadeAnimView,
                 notiX, notificationAlpha, true, panels);
-        if (!isDescendantOf(session.buttonView, session.shadeRootView)) {
+        if (!session.buttonNestedInShade) {
             session.applyPageTransform(session.buttonView, session.buttonAnimView,
                     notiX, notificationAlpha, true, panels);
         }
-        if (!isDescendantOf(session.clockDateView, session.shadeRootView)) {
+        if (!session.clockNestedInShade) {
             session.applyPageTransform(session.clockDateView, session.clockDateAnimView,
                     notiX, notificationAlpha, true, panels);
         }
         session.keepStationaryX(session.headerView, session.headerAnimView, panels);
         session.keepStationaryX(session.plmnView, session.plmnAnimView, panels);
         session.keepStationaryX(session.qsButtonsContainer, null, panels);
-    }
-
-    private static boolean isDescendantOf(View child, View ancestor) {
-        if (child == null || ancestor == null || child == ancestor) return child == ancestor;
-        ViewParent current = child.getParent();
-        while (current instanceof View view) {
-            if (view == ancestor) return true;
-            current = view.getParent();
-        }
-        return false;
     }
 
     private Object interceptSetSlideFraction(XposedInterface.Chain chain) throws Throwable {

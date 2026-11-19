@@ -1,6 +1,7 @@
 package com.samsung.music.qs.lagfix;
 
 import android.view.View;
+import android.view.ViewParent;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -99,14 +100,40 @@ final class HorizontalSwipeSession {
     View qsButtonsContainer;
     boolean reversed;
     boolean drawablesPrepared;
+    // The view graph does not change inside a horizontal slide session.
+    // Determine the parent relationship once, not on every slide callback.
+    boolean buttonNestedInShade;
+    boolean clockNestedInShade;
 
     void begin() {
         active = true;
         composeSlideFractionPinned = false;
         savedComposeSlideFraction = null;
         drawablesPrepared = false;
+        buttonNestedInShade = false;
+        clockNestedInShade = false;
         savedByTarget.clear();
         savedInOrder.clear();
+    }
+
+    /**
+     * Capture relationships after binding the two Samsung page views.
+     * Their parentage stays stable throughout one drag+settle cycle.
+     */
+    void cachePanelAncestry() {
+        buttonNestedInShade = isDescendantOf(buttonView, shadeRootView);
+        clockNestedInShade = isDescendantOf(clockDateView, shadeRootView);
+    }
+
+    private static boolean isDescendantOf(View child, View ancestor) {
+        if (child == null || ancestor == null) return false;
+        if (child == ancestor) return true;
+        ViewParent parent = child.getParent();
+        while (parent instanceof View view) {
+            if (view == ancestor) return true;
+            parent = view.getParent();
+        }
+        return false;
     }
 
     boolean isActive() {
