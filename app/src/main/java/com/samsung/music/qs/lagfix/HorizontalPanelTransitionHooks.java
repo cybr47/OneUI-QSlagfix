@@ -25,6 +25,9 @@ final class HorizontalPanelTransitionHooks {
     private final TransitionConstraintGate constraintGate = new TransitionConstraintGate();
     private int redundantConstraintCalls;
     private int reportedConstraintSessions;
+    private final AnimatorFanoutGate fanoutGate = new AnimatorFanoutGate();
+    private int redundantManagerFanouts;
+    private int reportedManagerSessions;
 
     private HorizontalPanelTransitionHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
@@ -81,6 +84,31 @@ final class HorizontalPanelTransitionHooks {
                 module.warn("Native constraint coalescer unavailable;"
                         + " Glass Fade remains enabled", optionalError);
             }
+            // Second optional optimization from Samsung's actual DEX:
+            // SecQSImplAnimatorManager allocates a Consumer + Java Stream and
+            // fans out every duplicate state-2 drag notification to seven
+            // animators. The per-frame panel position is handled by slide(),
+            // and the children consume only state/enabled, not drag fraction.
+            // Keep the initial event, enabled changes and every final state.
+            try {
+                Class<?> managerType = Class.forName(
+                        "com.android.systemui.qs.animator.SecQSImplAnimatorManager",
+                        false, loader);
+                Class<?> eventType = Class.forName(
+                        "com.android.systemui.shade.PanelTransitionStateChangeEvent",
+                        false, loader);
+                Method stateCallback = managerType.getDeclaredMethod(
+                        "onPanelTransitionStateChanged", eventType);
+                stateCallback.setAccessible(true);
+                handles.add(module.hook(stateCallback)
+                        .setId("coalesce-native-qs-animator-fanout")
+                        .intercept(hooks::interceptAnimatorFanout));
+                module.note("Native QS animator fan-out coalescer installed"
+                        + " (retain first/enabled/final events)");
+            } catch (Throwable optionalError) {
+                module.warn("QS animator fan-out optimization unavailable;"
+                        + " Glass Fade and constraint coalescing remain enabled", optionalError);
+            }
             module.note("Glass fade-native horizontal hooks installed"
                     + " (direct progress, no bounce or extra frame loop)");
         } catch (Throwable error) {
@@ -136,6 +164,8 @@ final class HorizontalPanelTransitionHooks {
                 if (activeSessionCount == 0) {
                     constraintGate.start();
                     redundantConstraintCalls = 0;
+                    fanoutGate.reset();
+                    redundantManagerFanouts = 0;
                 }
                 activeSessionCount++;
                 panels.bindSession(animator, session);
@@ -239,6 +269,34 @@ final class HorizontalPanelTransitionHooks {
             }
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // A changed SystemUI event contract must never suppress layout.
+        }
+        return chain.proceed();
+    }
+
+    /**
+     * Do not run the native QS animator-manager's Stream.filter().forEach()
+     * pipeline for repeated identical transient-state events. Keep every
+     * callback outside a currently active ShadeSwitch horizontal gesture;
+     * always forward the initial transient state, enabled changes and final
+     * QS/SHADE/COMBINED states. Native slide() still receives every fraction.
+     *
+     * Fail open if this specific Samsung event contract does not match.
+     */
+    private Object interceptAnimatorFanout(XposedInterface.Chain chain)
+            throws Throwable {
+        if (failed || !mainThread() || activeSessionCount <= 0) {
+            return chain.proceed();
+        }
+        try {
+            Object event = chain.getArg(0);
+            int state = panels.getEventState(event);
+            boolean splitEnabled = panels.isEventSplitEnabled(event);
+            if (!fanoutGate.shouldForward(state, splitEnabled, true)) {
+                redundantManagerFanouts++;
+                return null;
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Always preserve the native manager's behavior on unexpected ROMs.
         }
         return chain.proceed();
     }
@@ -415,6 +473,13 @@ final class HorizontalPanelTransitionHooks {
             module.note("Native constraint coalescer: skipped "
                     + redundantConstraintCalls + " redundant rebuild requests"
                     + " during horizontal gesture");
+        }
+        if (activeSessionCount == 0 && redundantManagerFanouts > 0
+                && reportedManagerSessions < 3) {
+            reportedManagerSessions++;
+            module.note("Native QS animator fan-out coalescer: skipped "
+                    + redundantManagerFanouts
+                    + " redundant transient state notifications");
         }
         session.restoreAndEnd(panels);
         sessions.remove(animator);
