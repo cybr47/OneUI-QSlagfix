@@ -7,9 +7,9 @@ import io.github.libxposed.api.XposedModule;
 /**
  * ShadeSwitch v2: clean area-increase base and tgtr settings.
  *
- * OFF (default): GlassUI-style frame-stepped horizontal page motion applied
- * directly to Samsung's native notification/QS views. Samsung retains
- * gesture recognition, touch interaction, and final panel state.
+ * OFF (default): Direct native horizontal page movement with GlassUI's
+ * crossfade, without elastic springs, bounce or independent settling inertia.
+ * Samsung retains gesture recognition and panel state.
  *
  * ON: Install the original area-increase NoSwipePanelHooks (header-only
  * vertical pulls with horizontal panel switching disabled).
@@ -50,7 +50,7 @@ public final class SamsungMusicWavesHook extends XposedModule {
 
         note("Loaded in SystemUI, module version " + BuildConfig.VERSION_NAME
                 + " (" + BuildConfig.BUILD_TYPE + ", gestures="
-                + (vertical ? "header-only-vertical" : "stock-horizontal")
+                + (vertical ? "header-only-vertical" : "glass-fade-direct")
                 + ", hideQuickQsRow=" + hideQuickQs + ")");
 
         ClassLoader loader = param.getClassLoader();
@@ -59,8 +59,8 @@ public final class SamsungMusicWavesHook extends XposedModule {
             // notification-body interception or custom header animation.
             NoSwipePanelHooks.install(this, loader);
         } else {
-            // Native gesture/state ownership; replace only visual slide rendering
-            // with GlassUI's live follow+settle+tail motion and page transforms.
+            // Keep the tested GlassUI crossfade on native Samsung panels,
+            // using direct native progress with no extra spring/frame loop.
             HorizontalPanelTransitionHooks.install(this, loader);
         }
 

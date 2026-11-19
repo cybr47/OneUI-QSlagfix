@@ -16,7 +16,7 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 9
-        versionName = "2.6.0-glass-native"
+        versionName = "2.6.1-glass-fade"
     }
 
     buildTypes {

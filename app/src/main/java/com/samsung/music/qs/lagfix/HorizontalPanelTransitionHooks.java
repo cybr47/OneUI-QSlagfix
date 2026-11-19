@@ -1,7 +1,6 @@
 package com.samsung.music.qs.lagfix;
 
 import android.os.Looper;
-import android.view.Choreographer;
 import android.view.View;
 import android.view.ViewParent;
 import java.util.ArrayList;
@@ -9,54 +8,9 @@ import java.util.List;
 import java.util.WeakHashMap;
 import io.github.libxposed.api.XposedInterface;
 
-/**
- * Installs the GlassUI-style horizontal transition between Notifications and Quick Settings on
- * the {@code cust} branch of ShadeSwitch using the libxposed 102
- * {@code module.hook(method).intercept(...)} API.
- *
- * <p>Key design guarantees:
- * <ol>
- *   <li><b>All reflection resolved once</b>: {@link HorizontalTransitionPanels} resolves every
- *       {@link Class}, {@link java.lang.reflect.Field}, {@link java.lang.reflect.Method}, and
- *       {@code Direction} enum constant once during
- *       {@link #install(SamsungMusicWavesHook, ClassLoader)}, and caches per-animator object/view
- *       references inside {@link HorizontalSwipeSession} when a swipe starts.
- *   <li><b>No double {@code slideFraction} writes per frame</b>: During an active horizontal
- *       transition ({@code panelTransitionState == TRANSITION_STATE}, {@code LEFT}/{@code RIGHT},
- *       {@code overSlideX == 0f}), {@link #interceptSlide} handles the frame directly without
- *       invoking stock {@code PanelTransitionAnimator.slide} (which would otherwise write
- *       {@code 1f - fraction} or {@code fraction} to {@code composeAdapter.setSlideFraction} and
- *       step stock's {@code ±300px}/{@code ±250px} {@code TouchAnimator}s). Instead,
- *       {@code setSlideFraction(0f)} is written at most once when the horizontal swipe begins.
- *   <li><b>Single-pass page fade across both Canvas content and window-blur card backgrounds</b>:
- *       <ul>
- *         <li>Pinning {@code SecQSPanelComposeAdapter.setSlideFraction(0f)} keeps Compose
- *             {@code alphaOfScene}, {@code alphaOfBlurTileBackground}, and {@code alphaOfSlide} at
- *             {@code 1.0f} so {@code qsRootView.setAlpha(frame.qsAlpha)} is the sole opacity curve
- *             on Quick Settings.
- *         <li>In One UI 9 ({@code NotiRune.NOTI_STYLE_ENR_WINDOW_BLUR}),
- *             {@code NotificationStackScrollLayout.setAlpha(v)} sets the {@code ViewGroup} layer
- *             alpha ({@code super.setAlpha(v)}) for Canvas-drawn text, icons, and media controls,
- *             and calls {@code ActivatableNotificationView.setBlurAlphaFromParent(v)} for each
- *             card's window-level {@code BackgroundBlurDrawable} (which does not inherit the
- *             {@code ViewGroup} Canvas layer alpha). {@link #interceptSetBlurAlphaFromParent}
- *             computes {@code parentAlpha * rowOwnAlpha} via
- *             {@link HorizontalTransitionMath#effectiveNotificationBlurAlpha(float, float, boolean, float)}
- *             so both ordinary notification cards and the large media card fade their rounded
- *             backgrounds in lockstep with their contents while preserving any existing row opacity.
- *         <li>Skipping redundant per-frame {@code onPanelTransitionStateChanged(TRANSITION_STATE)}
- *             callbacks (emitted by {@code SecPanelSplitHelper.setDraggedFraction} on each drag
- *             frame) prevents mid-drag visibility/alpha churn on {@code buttonContainer} and
- *             {@code clockDateContainer}.
- *       </ul>
- *   <li><b>Scoped cleanup &amp; exact prior-value restoration</b>: View mutations and cleanup are
- *       strictly scoped to an active {@link HorizontalSwipeSession}. When no horizontal swipe is
- *       active, {@code onPanelTransitionStateChanged}, {@code clearAnimationState}, and
- *       {@code onPanelClosed$1} pass through untouched so ordinary vertical shade and lockscreen
- *       animations are never disturbed. When an active horizontal swipe ends, every modified view
- *       (including ancestors and {@code ComposeView} children) is restored to its exact saved
- *       prior values before native settlement runs.
- * </ol>
+/** Applies GlassUI-style crossfade to native Samsung panels without spring
+ * follow, inertia, elastic scaling, extra Choreographer work or stock visual
+ * transforms. Samsung owns gesture progress, completion and panel state.
  */
 final class HorizontalPanelTransitionHooks {
     private final SamsungMusicWavesHook module;
@@ -66,88 +20,7 @@ final class HorizontalPanelTransitionHooks {
     private int activeSessionCount;
     private boolean internalSlideFractionWrite;
     private volatile boolean failed;
-    private final WeakHashMap<Object, GlassFrame> glassFrames = new WeakHashMap<>();
     private int observedHorizontalFrames;
-
-    /**
-     * One VSYNC-driven motion runner per live Samsung panel animator.
-     * Samsung remains responsible for state and touch. We own only the visual
-     * transforms; stock PanelTransitionAnimator.slide is skipped on this path.
-     */
-    private static final class GlassFrame implements Choreographer.FrameCallback {
-        final HorizontalPanelTransitionHooks owner;
-        final Object animator;
-        final HorizontalSwipeSession session;
-        final GlassMotionPhysics spring = new GlassMotionPhysics();
-        boolean scheduled, cancelled, toQs;
-        float width;
-        float originalPivotX;
-        int originalLayerType;
-        boolean layerPromoted;
-        int appliedFrames;
-
-        GlassFrame(HorizontalPanelTransitionHooks owner, Object animator,
-                   HorizontalSwipeSession session, boolean toQs, float width) {
-            this.owner = owner;
-            this.animator = animator;
-            this.session = session;
-            this.toQs = toQs;
-            this.width = width;
-            View sheet = session.qsRootView;
-            if (sheet != null) {
-                originalPivotX = sheet.getPivotX();
-                originalLayerType = sheet.getLayerType();
-                // Match GlassUI's sheet renderer: cache its translated page.
-                if (originalLayerType != View.LAYER_TYPE_HARDWARE) {
-                    sheet.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-                    layerPromoted = true;
-                }
-                sheet.setPivotX(0f);
-            }
-            spring.begin(toQs, System.nanoTime());
-        }
-
-        void sample(float qsShown, boolean directionToQs, float newWidth) {
-            toQs = directionToQs;
-            width = newWidth;
-            spring.target(qsShown, System.nanoTime());
-            schedule();
-        }
-
-        void schedule() {
-            if (cancelled || scheduled) return;
-            scheduled = true;
-            Choreographer.getInstance().postFrameCallback(this);
-        }
-
-        @Override
-        public void doFrame(long frameTimeNanos) {
-            scheduled = false;
-            if (cancelled || !session.isActive() || owner.failed) return;
-            try {
-                spring.frame(frameTimeNanos);
-                owner.applyGlassFrame(this);
-                appliedFrames++;
-                if (!spring.isSettled()) schedule();
-            } catch (ReflectiveOperationException | RuntimeException e) {
-                owner.fail(e);
-            }
-        }
-
-        void cancel() {
-            cancelled = true;
-            if (scheduled) {
-                Choreographer.getInstance().removeFrameCallback(this);
-                scheduled = false;
-            }
-            spring.stop();
-            View sheet = session.qsRootView;
-            if (sheet != null) {
-                sheet.setPivotX(originalPivotX);
-                if (layerPromoted) sheet.setLayerType(originalLayerType, null);
-            }
-        }
-    }
 
     private HorizontalPanelTransitionHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
@@ -181,8 +54,8 @@ final class HorizontalPanelTransitionHooks {
                         .setId("horizontal-notif-blur-alpha")
                         .intercept(hooks::interceptSetBlurAlphaFromParent));
             }
-            module.note("GlassUI dual-spring horizontal visual engine installed"
-                    + " (VSYNC follow+settle+tail, native Samsung panel views; no stock slide transforms)");
+            module.note("Glass fade-native horizontal hooks installed"
+                    + " (direct progress, no bounce or extra frame loop)");
         } catch (Throwable error) {
             for (int i = handles.size() - 1; i >= 0; i--) {
                 handles.get(i).unhook();
@@ -263,25 +136,13 @@ final class HorizontalPanelTransitionHooks {
                 return chain.proceed();
             }
 
-            // Samsung still supplies the finger-controlled target on every update.
-            // It does NOT render the native stock animation: we use one dedicated
-            // VSYNC spring driver for the real Samsung QS / notification views.
             pinComposeSlideFractionOnce(session);
             panels.prepareDrawables(session);
-            GlassFrame running = glassFrames.get(animator);
-            if (running == null) {
-                boolean toQs = frame.movingToQs;
-                running = new GlassFrame(this, animator, session, toQs, width);
-                glassFrames.put(animator, running);
-            }
-            running.sample(frame.qsShown, frame.movingToQs, width);
+            applyGlassFadeFrame(session, frame.qsShown, width);
             if (observedHorizontalFrames++ < 3) {
-                module.note("Glass native horizontal target received; fraction="
-                        + fraction + " toQs=" + frame.movingToQs
-                        + " width=" + width);
+                module.note("Glass fade frame applied; fraction=" + fraction
+                        + " toQs=" + frame.movingToQs + " width=" + width);
             }
-            // Skip Samsung's original 300px/250px TouchAnimator and Compose
-            // fractions; GlassFrame owns the visible movement until completion.
             return null;
         } catch (ReflectiveOperationException | RuntimeException error) {
             fail(error);
@@ -289,34 +150,19 @@ final class HorizontalPanelTransitionHooks {
         }
     }
 
-    private void applyGlassFrame(GlassFrame motion) throws ReflectiveOperationException {
-        HorizontalSwipeSession session = motion.session;
-        if (!session.isActive() || motion.width <= 0f) return;
-        float qs = GlassMotionPhysics.clamp01(motion.spring.page());
-        float tail = motion.spring.tail();
+    private void applyGlassFadeFrame(HorizontalSwipeSession session, float qsShown, float width)
+            throws ReflectiveOperationException {
+        if (!session.isActive() || width <= 0f) return;
+        float qs = GlassFadeMath.clamp01(qsShown);
         float sign = session.reversed ? -1f : 1f;
-        float qsX = sign * motion.width * (1f - qs);
-        float notiX = -sign * motion.width * qs;
-
-        // GlassUI SideSlide.applySheet: leading-edge stretch, vertical squash,
-        // alpha=min(1, page*1.5), sideways full-panel translation.
-        float stretch = GlassMotionPhysics.squash(qs, tail, motion.width);
-        float qsAlpha = GlassMotionPhysics.alpha(qs);
-        float notificationAlpha = GlassMotionPhysics.alpha(1f-qs);
+        float qsX = sign * width * (1f - qs);
+        float notiX = -sign * width * qs;
+        float qsAlpha = GlassFadeMath.alpha(qs);
+        float notificationAlpha = GlassFadeMath.alpha(1f - qs);
         session.applyPageTransform(session.qsRootView, session.qsAnimView,
                 qsX, qsAlpha, true, panels);
-        session.saveIfAbsent(session.qsRootView, session.qsAnimView, panels);
-        if (session.qsRootView.getScaleX() != 1f + stretch)
-            panels.setScaleX(session.qsRootView, session.qsAnimView, 1f + stretch);
-        if (session.qsRootView.getScaleY() != 1f - 0.25f * stretch)
-            panels.setScaleY(session.qsRootView, session.qsAnimView, 1f - 0.25f * stretch);
-
-        // The other physical Samsung page follows the same full-screen axis.
-        // Keep controls on the native views, not on any GlassUI replacement UI.
         session.applyPageTransform(session.shadeRootView, session.shadeAnimView,
                 notiX, notificationAlpha, true, panels);
-        // A child already inherits its parent's transform. Do not apply a
-        // second translation to Samsung clock/date or button children.
         if (!isDescendantOf(session.buttonView, session.shadeRootView)) {
             session.applyPageTransform(session.buttonView, session.buttonAnimView,
                     notiX, notificationAlpha, true, panels);
@@ -325,8 +171,6 @@ final class HorizontalPanelTransitionHooks {
             session.applyPageTransform(session.clockDateView, session.clockDateAnimView,
                     notiX, notificationAlpha, true, panels);
         }
-
-        // Shared header chrome is never treated as a sliding page.
         session.keepStationaryX(session.headerView, session.headerAnimView, panels);
         session.keepStationaryX(session.plmnView, session.plmnAnimView, panels);
         session.keepStationaryX(session.qsButtonsContainer, null, panels);
@@ -501,8 +345,6 @@ final class HorizontalPanelTransitionHooks {
             int transitionState,
             boolean restoreComposeSlideFraction)
             throws ReflectiveOperationException {
-        GlassFrame motion = glassFrames.remove(animator);
-        if (motion != null) motion.cancel();
         Float priorSlideFraction = session.getSavedComposeSlideFraction();
         Object composeAdapter = session.composeAdapter;
         Object slideFractionFlow = session.slideFractionFlow;
@@ -531,10 +373,6 @@ final class HorizontalPanelTransitionHooks {
         if (!failed) {
             failed = true;
             activeSessionCount = 0;
-            for (GlassFrame frame : glassFrames.values()) {
-                if (frame != null) frame.cancel();
-            }
-            glassFrames.clear();
             for (HorizontalSwipeSession session : sessions.values()) {
                 if (session != null && session.isActive()) {
                     try {

@@ -1,16 +1,18 @@
 # Changelog
 
-## v2-glass-native — experimental true frame-driven transplant
+## v2-glass-fade — no-bounce fade-only experiment
 
-- Independently reconstructed GlassUI 2.3.4's three spring models, 1/240-s substep integration, follow/settle switching and trailing edge.
-- Intercept Samsung's `PanelTransitionAnimator.slide` for active horizontal transitions; **do not execute stock view movement** while the separate animation is active.
-- Drive native Quick Settings and Notifications views on a single Choreographer callback rather than changing a release PathInterpolator.
-- Port the GlassUI custom sheet's translation/alpha/stretch behavior to the native QS view; optionally cache it as a hardware layer only while moving.
-- Preserve `area-increase` vertical gestures, Together compact tile option, and the clean `v2` branch.
-- Add pure Java follow/reversal/settling regressions; runtime visual testing is required.
+- Keep full-screen native Samsung page slide and the tested GlassUI-style crossfade.
+- Eliminate FOLLOW, SETTLE and TAIL spring models, elastic squash/stretch, scale animations and delayed inertia.
+- Remove extra VSYNC/Choreographer loop; apply visual transforms directly from Samsung's horizontal slide fraction.
+- Do not change gesture recognition, notification interactions, state completion, area-increase vertical mode or Together Quick QS toggle.
+- Add bounded fade unit tests and APK checks preventing the old spring engine from being bundled.
+- Supplied old `v2-glass-native` trace shows 124/1056 partial/full-jank shade frames (11.7%), median frame span 12.23ms. No performance improvement is claimed until on-device retesting.
 
-## v2 — clean area-increase restart
+## v2-glass-native — spring experiment (unchanged in prior branch)
 
-- Settings activity and Together Quick QS row option.
-- Original header-only vertical swipe, native horizontal animation in default mode.
-- Removed old QS lagfix media-wave hooks.
+- GlassUI-derived spring follow/settle/tail on native Samsung pages with new frame callback.
+
+## v2 — clean area-increase base
+
+- Header-only vertical gesture, settings, Together Quick QS row option and untouched Samsung horizontal baseline.
