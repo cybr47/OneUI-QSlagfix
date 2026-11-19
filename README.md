@@ -36,3 +36,11 @@ Disable the separate GlassUI LSPosed module so two animation systems don't inter
 The log should show `Glass fade-native horizontal hooks installed` and `Glass fade frame applied` when horizontal transitions occur.
 
 The original `v2` and `v2-glass-native` branches are unchanged. Uninstall or replace with the earlier signed `v2-glass-native` build to return to spring motion; either build shares the package ID/versionCode/signing key.
+
+## v2-glass-fade-eventperf (experimental, native QS animator fan-out)
+
+From the validated 6.82% `v2-glass-fade-constraints` baseline. Adds only one optional hook to Samsung's `SecQSImplAnimatorManager.onPanelTransitionStateChanged`. During an *active* native horizontal ShadeSwitch swipe, the first `TRANSITION_STATE` event is always forwarded to all seven QS animators; duplicate transient events carrying the same `state` and `enabled` values are skipped. Any change in the split-enabled flag or a final QS/SHADE/COMBINED event is forwarded. This avoids the manager's repeated `new Consumer`, `ArrayList.stream().filter().forEach()` work for unchanged events. On this device, the manager child methods consume `state`/`enabled`; only PanelTransitionAnimator logs `fraction`, and ShadeSwitch owns its actual horizontal `slide` visuals separately.
+
+The base native ConstraintSet coalescer is retained. No custom animation, panel layer, view hiding, media-player changes, Compose freeze or changed slide fraction is introduced. If the optional manager hook is unavailable, the existing fade and constraint optimization remain intact. Runtime performance is **unmeasured** until a new trace is captured; this cannot guarantee reaching GlassUI's historical 5.08% trace, especially for initial-panel cold rendering.
+
+Look for `Native QS animator fan-out coalescer installed` and `Native QS animator fan-out coalescer: skipped N redundant transient state notifications` in LSPosed logs. Use the original `v2-glass-fade-constraints` signed APK to roll back immediately if any visual behavior changes. Read [event optimization details](docs/EVENT-FANOUT-PERF.md).

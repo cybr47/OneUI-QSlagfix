@@ -55,6 +55,7 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
 
     private final Field eventState;
     private final Field eventFraction;
+    private final Field eventEnabled;
 
     private final Field notifBlurAlphaFromParent;
     private final Field notifDrawingAppearAnimation;
@@ -128,6 +129,7 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
 
         eventState = field(eventType, "state");
         eventFraction = field(eventType, "fraction");
+        eventEnabled = field(eventType, "enabled");
 
         notifBlurAlphaFromParent = optionalField(
                 activatableNotificationViewType, "mBlurAlphaFromParent", float.class);
@@ -186,6 +188,10 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
 
     float getEventFraction(Object event) throws IllegalAccessException {
         return eventFraction.getFloat(event);
+    }
+
+    boolean isEventSplitEnabled(Object event) throws IllegalAccessException {
+        return eventEnabled.getBoolean(event);
     }
 
     Object getComposeAdapter(Object animator) throws IllegalAccessException {
