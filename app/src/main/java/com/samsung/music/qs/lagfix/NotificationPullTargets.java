@@ -2,25 +2,27 @@ package com.samsung.music.qs.lagfix;
 
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
-/** The same clipped/group-aware hit test used by Samsung's notification expansion code. */
+/**
+ * Finds notification-row touch targets from the shared shade window, not just its
+ * NotificationPanelView child. Only non-row downward gestures may be transferred.
+ */
 final class NotificationPullTargets {
-    final Method dispatchPanel, interceptPanel;
+    private final Class<?> panelType, stackType, notificationRow;
     private final Field panelController, controllerHelper, shadeRoot;
-    private final Class<?> notificationRow, stackType;
-    private final Method childAtRawPosition, isMediaNotification, touchOccupied;
+    private final Method childAtRawPosition, isMediaNotification;
+    private WeakReference<View> cachedPanel, cachedStack;
 
     NotificationPullTargets(ClassLoader loader) throws ReflectiveOperationException {
-        Class<?> panel = loader.loadClass("com.android.systemui.shade.NotificationPanelView");
-        dispatchPanel = NativePanels.method(panel, "dispatchTouchEvent", MotionEvent.class);
-        interceptPanel = NativePanels.method(panel, "onInterceptTouchEvent", MotionEvent.class);
-        panelController = NativePanels.field(panel, "secNPVcontroller");
-        touchOccupied = NativePanels.method(panelController.getType(), "isPanelTouchOccupied");
+        panelType = loader.loadClass("com.android.systemui.shade.NotificationPanelView");
+        panelController = NativePanels.field(panelType, "secNPVcontroller");
         controllerHelper = NativePanels.field(panelController.getType(), "panelSplitHelper");
-        // Samsung stores R.id.notification_stack_scroller on the split helper when the panel binds.
-        shadeRoot = NativePanels.field(controllerHelper.getType(), "shadeRootView");
+        Class<?> helperType = loader.loadClass("com.android.systemui.shade.SecPanelSplitHelper");
+        shadeRoot = NativePanels.field(helperType, "shadeRootView");
         stackType = loader.loadClass("com.android.systemui.statusbar.notification.stack.NotificationStackScrollLayout");
         childAtRawPosition = NativePanels.method(stackType, "getChildAtRawPosition", float.class, float.class);
         notificationRow = loader.loadClass("com.android.systemui.statusbar.notification.row.ExpandableNotificationRow");
@@ -28,31 +30,57 @@ final class NotificationPullTargets {
         isMediaNotification = NativePanels.method(activatable, "isMediaNotification", notificationRow);
     }
 
-    Object helper(View panel) throws IllegalAccessException {
+    Object helperFromWindow(View window) throws IllegalAccessException {
+        View panel = cachedPanel == null ? null : cachedPanel.get();
+        if (panel == null || !panel.isAttachedToWindow() || panel.getRootView() != window.getRootView()) {
+            panel = find(window, panelType);
+            cachedPanel = panel == null ? null : new WeakReference<>(panel);
+        }
+        if (panel == null) return null;
         Object controller = panelController.get(panel);
         return controller == null ? null : controllerHelper.get(controller);
-    }
-
-    boolean touchOccupied(View panel) throws ReflectiveOperationException {
-        Object controller = panelController.get(panel);
-        return controller == null || (boolean) touchOccupied.invoke(controller);
     }
 
     SwipeSession.Start classify(NativePanels panels, Object helper, MotionEvent down)
             throws ReflectiveOperationException {
         if (!panels.containsDown(helper, down)) return SwipeSession.Start.NONE;
-        View stack = (View) shadeRoot.get(helper);
-        if (!stackType.isInstance(stack) || !stack.isAttachedToWindow()) {
+        // Samsung's shadeRootView need not be the NSSL itself. A strict cast here made
+        // body gestures silently fall back to header-only behavior on some layouts.
+        View candidate = (View) shadeRoot.get(helper);
+        View stack = stackType.isInstance(candidate) ? candidate : null;
+        if (stack == null) {
+            stack = cachedStack == null ? null : cachedStack.get();
+            View root = panels.panelRoot(helper);
+            if (stack == null || !stack.isAttachedToWindow()
+                    || root == null || stack.getRootView() != root.getRootView()) {
+                stack = root == null ? null : find(root, stackType);
+                cachedStack = stack == null ? null : new WeakReference<>(stack);
+            }
+        }
+        if (stack == null || !stack.isAttachedToWindow()) {
+            // Fail closed: never steal a notification-row gesture without a row hit test.
             return panels.inHeader(helper, down) ? SwipeSession.Start.HEADER : SwipeSession.Start.NONE;
         }
-        // A hidden stack has no touchable rows, even if it still has recycled children.
         if (!stack.isShown()) return SwipeSession.Start.NOTIFICATIONS;
         Object child = childAtRawPosition.invoke(stack, down.getRawX(), down.getRawY());
-        // Samsung's promoted player is itself an ExpandableNotificationRow. The dedicated
-        // MediaContainerView and empty/decor areas also allow a pull. All other rows retain it.
+        // Native notification expansion/scrolling is preserved. Samsung's promoted
+        // media row and empty/decor regions can initiate a panel-switch pull.
         if (notificationRow.isInstance(child) && !(boolean) isMediaNotification.invoke(null, child)) {
             return SwipeSession.Start.NONE;
         }
-        return SwipeSession.Start.NOTIFICATIONS;
+        return panels.inHeader(helper, down)
+                ? SwipeSession.Start.HEADER : SwipeSession.Start.NOTIFICATIONS;
+    }
+
+    private static View find(View root, Class<?> type) {
+        if (root == null) return null;
+        if (type.isInstance(root)) return root;
+        if (!(root instanceof ViewGroup)) return null;
+        ViewGroup group = (ViewGroup) root;
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View found = find(group.getChildAt(i), type);
+            if (found != null) return found;
+        }
+        return null;
     }
 }
