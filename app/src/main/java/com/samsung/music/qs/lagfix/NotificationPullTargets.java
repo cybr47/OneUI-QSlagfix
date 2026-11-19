@@ -93,6 +93,45 @@ final class NotificationPullTargets {
                 ? SwipeSession.Start.HEADER : SwipeSession.Start.NOTIFICATIONS;
     }
 
+    /**
+     * Cancel only the notification content's prior child stream. Dispatching a
+     * synthetic CANCEL through NotificationShadeWindowView itself would also
+     * invoke the outer shade/window interaction controller, disrupting the
+     * clock/date and scrim while the native panel switch is being handed off.
+     *
+     * The source event is window-local; translate its coordinates to the
+     * notification content's local space before dispatching to its children.
+     */
+    boolean cancelContentTouch(View window, MotionEvent source) {
+        View panel = cachedPanel == null ? null : cachedPanel.get();
+        if (panel == null || !panel.isAttachedToWindow()
+                || panel.getRootView() != window.getRootView()) {
+            panel = find(window, panelType);
+            cachedPanel = panel == null ? null : new WeakReference<>(panel);
+        }
+        // On a layout where the NPV isn't mounted, the stack is still the
+        // media/notification touch host. Never send CANCEL to the outer window.
+        if (panel == null) panel = find(window, stackType);
+        if (panel == null || panel == window || !panel.isAttachedToWindow()) {
+            return false;
+        }
+
+        MotionEvent cancel = MotionEvent.obtainNoHistory(source);
+        int[] windowLocation = new int[2];
+        int[] contentLocation = new int[2];
+        window.getLocationOnScreen(windowLocation);
+        panel.getLocationOnScreen(contentLocation);
+        cancel.offsetLocation(windowLocation[0] - contentLocation[0],
+                windowLocation[1] - contentLocation[1]);
+        cancel.setAction(MotionEvent.ACTION_CANCEL);
+        try {
+            panel.dispatchTouchEvent(cancel);
+            return true;
+        } finally {
+            cancel.recycle();
+        }
+    }
+
     private static View find(View root, Class<?> type) {
         if (root == null) return null;
         if (type.isInstance(root)) return root;
