@@ -1,4 +1,14 @@
 <resources>
-    <string name="app_name">One UI QS Lag Fix (header drag)</string>
-    <string name="xposed_description">Optimizes media waves. Drag down from the clock/date header to move between panels using Samsung transitions. Horizontal panel switching is disabled.</string>
+    <string name="app_name">ShadeSwitch</string>
+    <string name="xposed_description">Swipe left or right to switch between Notifications and Quick Settings.</string>
+    <string name="vertical_swipe_title">Vertical swipe to switch panels</string>
+    <string name="vertical_swipe_summary">In Separate style, swipe down from the panel header or date row to switch between Notifications and Quick Settings. Notifications and media controls keep their normal gestures.</string>
+    <string name="together_style">Together style</string>
+    <string name="hide_quick_qs_title">Hide Quick QS row</string>
+    <string name="hide_quick_qs_summary">Hide the compact row of tiles on the notification panel when using Together style.</string>
+    <string name="restart_systemui_to_apply">Restart SystemUI to apply.</string>
+    <string name="lsposed_service_waiting">Waiting for LSPosed service\u2026 Enable ShadeSwitch in LSPosed to edit settings.</string>
+    <string name="lsposed_service_disconnected">LSPosed service disconnected. Reopen from LSPosed to edit settings.</string>
+    <string name="lsposed_prefs_load_failed">Failed to load Remote Preferences from LSPosed.</string>
+    <string name="lsposed_prefs_save_failed">Failed to save setting to LSPosed Remote Preferences.</string>
 </resources>
