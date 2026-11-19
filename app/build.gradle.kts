@@ -4,7 +4,11 @@ plugins {
 
 android {
     namespace = "com.samsung.music.qs.lagfix"
-    compileSdk = 36
+    compileSdk {
+        version = release(37) {
+            minorApiLevel = 0
+        }
+    }
     buildToolsVersion = "36.0.0"
 
     defaultConfig {
@@ -12,7 +16,7 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 9
-        versionName = "2.3.2-lockscreen-perf"
+        versionName = "2.5.0-v2"
     }
 
     buildTypes {
@@ -41,5 +45,6 @@ android {
 
 dependencies {
     compileOnly(libs.xposed.api)
+    implementation(libs.xposed.service)
     testImplementation("junit:junit:4.13.2")
 }
