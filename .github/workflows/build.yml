@@ -2,7 +2,7 @@ name: Build APKs
 
 on:
   push:
-    branches: [main, no-swipe-panel-switch, area-increase, v2, v2-glass-native, v2-glass-fade]
+    branches: [main, no-swipe-panel-switch, area-increase, v2, v2-glass-native, v2-glass-fade, v2-glass-fade-constraints]
   pull_request:
     branches: [main, no-swipe-panel-switch, area-increase]
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: apk-${{ github.workflow }}-${{ github.ref }}
+  group: apk-${{ github.workflow }}-${{ github.ref }}-constraints
   cancel-in-progress: true
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
       - uses: actions/upload-artifact@v7.0.2
         if: github.event_name != 'pull_request'
         with:
-          name: apks-v2-glass-fade-${{ github.sha }}
+          name: apks-v2-glass-fade-constraints-${{ github.sha }}
           path: artifacts/
           if-no-files-found: error
           retention-days: 30

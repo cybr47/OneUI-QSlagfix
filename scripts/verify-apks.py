@@ -36,6 +36,7 @@ for index, argument in enumerate(sys.argv[1:]):
         assert not any(name.startswith("Lio/github/libxposed/api/") for name in classes), "compileOnly API bundled"
         assert "Lcom/samsung/music/qs/lagfix/HorizontalPanelTransitionHooks;" in classes, "Native visual animator missing"
         assert "Lcom/samsung/music/qs/lagfix/GlassFadeMath;" in classes, "GlassUI fade curve missing"
+        assert "Lcom/samsung/music/qs/lagfix/TransitionConstraintGate;" in classes, "Native constraint gate missing"
         assert "Lcom/samsung/music/qs/lagfix/GlassMotionPhysics;" not in classes, "Inertial bounce physics unexpectedly included"
         # Prevent old QS lagfix sampling hooks from being reintroduced silently.
         # They are not needed for either v2 mode and do not control frame scheduling.
@@ -52,6 +53,7 @@ for index, argument in enumerate(sys.argv[1:]):
             blob = b"".join(dexes)
             for message in [b"Loaded in SystemUI, module version",
                             b"Glass fade-native horizontal hooks installed",
+                            b"Native transition constraint coalescer installed",
                             b"Panel gesture hooks installed",
                             b"Together style compact tile row hook installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()

@@ -5,7 +5,7 @@ import android.util.Log;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * ShadeSwitch v2: clean area-increase base and tgtr settings.
+ * Glass Fade Constraints: base v2-glass-fade plus targeted native layout coalescing.
  *
  * OFF (default): Direct native horizontal page movement with GlassUI's
  * crossfade, without elastic springs, bounce or independent settling inertia.

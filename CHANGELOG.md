@@ -1,18 +1,19 @@
 # Changelog
 
-## v2-glass-fade — no-bounce fade-only experiment
+## v2-glass-fade-constraints — source-verified native layout optimization
 
-- Keep full-screen native Samsung page slide and the tested GlassUI-style crossfade.
-- Eliminate FOLLOW, SETTLE and TAIL spring models, elastic squash/stretch, scale animations and delayed inertia.
-- Remove extra VSYNC/Choreographer loop; apply visual transforms directly from Samsung's horizontal slide fraction.
-- Do not change gesture recognition, notification interactions, state completion, area-increase vertical mode or Together Quick QS toggle.
-- Add bounded fade unit tests and APK checks preventing the old spring engine from being bundled.
-- Supplied old `v2-glass-native` trace shows 124/1056 partial/full-jank shade frames (11.7%), median frame span 12.23ms. No performance improvement is claimed until on-device retesting.
+- Based on the visually preferred `v2-glass-fade`; excludes the later `fcc6466` hot-path experiment.
+- Inspect actual One UI 9 SystemUI.apk SHA-256 `81a9e975…`:
+  the Samsung split helper dispatches a transition event for each drag fraction,
+  and one listener posts `ConstraintSet.clone/applyTo` despite never reading the fraction.
+- Add an **optional, narrowly scoped listener hook** to forward the first transition event,
+  then skip duplicate transient events for that listener only while a horizontal swipe is active.
+- Never drop discrete completion, vertical/normal, configuration, layout, media, notification
+  blur, Compose or other event listeners.
+- Log capped per-gesture skipped rebuild counts, test exact pass-through/reset semantics.
+- No new animation curve, layer promotion, spring or view modification.
+- Effect on FPS / first-open responsiveness is unverified until on-device trace.
 
-## v2-glass-native — spring experiment (unchanged in prior branch)
+## v2-glass-fade — fade without bounce
 
-- GlassUI-derived spring follow/settle/tail on native Samsung pages with new frame callback.
-
-## v2 — clean area-increase base
-
-- Header-only vertical gesture, settings, Together Quick QS row option and untouched Samsung horizontal baseline.
+- Native full-width horizontal panel slide and GlassUI crossfade; no spring bounce.
