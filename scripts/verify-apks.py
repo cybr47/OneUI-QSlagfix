@@ -35,6 +35,14 @@ for index, argument in enumerate(sys.argv[1:]):
             assert "L" + entry.replace(".", "/") + ";" in classes, "module entry class missing from the APK"
         assert not any(name.startswith("Lio/github/libxposed/api/") for name in classes), "compileOnly API bundled"
         assert "Lcom/samsung/music/qs/lagfix/HorizontalPanelTransitionHooks;" not in classes, "GlassUI animation unexpectedly bundled"
+        # Prevent old QS lagfix sampling hooks from being reintroduced silently.
+        # They are not needed for either v2 mode and do not control frame scheduling.
+        forbidden = (b"MultiWaveAreaTrackRenderer", b"legacy-wave-sampling",
+                     b"colorful-wave-sampling", b"colorful-wave-style-updates",
+                     b"raiseStep", b"setWaveStyles")
+        for identifier in forbidden:
+            assert all(identifier not in dex for dex in dexes), (
+                "Obsolete media-wave lagfix reference bundled: " + identifier.decode())
         assert "assets/xposed_init" not in apk.namelist(), "legacy entry remains"
         if index == 1:
             # Release is intentionally not minified (see app/build.gradle.kts) and writes one short status
