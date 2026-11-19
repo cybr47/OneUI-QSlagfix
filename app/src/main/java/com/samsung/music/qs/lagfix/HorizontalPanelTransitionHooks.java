@@ -3,6 +3,7 @@ package com.samsung.music.qs.lagfix;
 import android.os.Looper;
 import android.view.View;
 import android.view.ViewParent;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.WeakHashMap;
@@ -21,6 +22,9 @@ final class HorizontalPanelTransitionHooks {
     private boolean internalSlideFractionWrite;
     private volatile boolean failed;
     private int observedHorizontalFrames;
+    private final TransitionConstraintGate constraintGate = new TransitionConstraintGate();
+    private int redundantConstraintCalls;
+    private int reportedConstraintSessions;
 
     private HorizontalPanelTransitionHooks(SamsungMusicWavesHook module, ClassLoader loader)
             throws ReflectiveOperationException {
@@ -53,6 +57,29 @@ final class HorizontalPanelTransitionHooks {
                 handles.add(module.hook(hooks.panels.setBlurAlphaFromParent)
                         .setId("horizontal-notif-blur-alpha")
                         .intercept(hooks::interceptSetBlurAlphaFromParent));
+            }
+            // Optional, firmware-specific optimization: a Samsung listener
+            // posts a full ConstraintSet.clone/applyTo on EVERY fraction update
+            // even though updateConstraints$1 does not consume the fraction.
+            // Failure to resolve it must never disable the working fade hooks.
+            try {
+                Class<?> listenerType = Class.forName(
+                        "com.android.systemui.shade.SecNotificationsQSContainerController"
+                        + "$panelTransitionStateListener$1", false, loader);
+                Class<?> eventType = Class.forName(
+                        "com.android.systemui.shade.PanelTransitionStateChangeEvent",
+                        false, loader);
+                Method listenerCallback = listenerType.getDeclaredMethod(
+                        "onPanelTransitionStateChanged", eventType);
+                listenerCallback.setAccessible(true);
+                handles.add(module.hook(listenerCallback)
+                        .setId("coalesce-native-container-constraint-rebuild")
+                        .intercept(hooks::interceptContainerConstraintEvent));
+                module.note("Native transition constraint coalescer installed"
+                        + " (retain first/final/layout updates)");
+            } catch (Throwable optionalError) {
+                module.warn("Native constraint coalescer unavailable;"
+                        + " Glass Fade remains enabled", optionalError);
             }
             module.note("Glass fade-native horizontal hooks installed"
                     + " (direct progress, no bounce or extra frame loop)");
@@ -106,6 +133,10 @@ final class HorizontalPanelTransitionHooks {
             }
             if (!session.isActive()) {
                 session.begin();
+                if (activeSessionCount == 0) {
+                    constraintGate.start();
+                    redundantConstraintCalls = 0;
+                }
                 activeSessionCount++;
                 panels.bindSession(animator, session);
                 if (session.composeAdapter != null) {
@@ -184,6 +215,32 @@ final class HorizontalPanelTransitionHooks {
             current = view.getParent();
         }
         return false;
+    }
+
+    /**
+     * Samsung's container listener posts a new Runnable which clones and
+     * reapplies its entire ConstraintSet on every transient fraction update.
+     * That underlying routine never reads draggedFraction or the event;
+     * only the first notification per horizontal session is needed.
+     *
+     * This hook does NOT modify the native event, its StateFlow, other
+     * listeners, normal layout callbacks or completion-state dispatch.
+     */
+    private Object interceptContainerConstraintEvent(XposedInterface.Chain chain)
+            throws Throwable {
+        if (failed || !mainThread() || activeSessionCount <= 0) {
+            return chain.proceed();
+        }
+        try {
+            int state = panels.getEventState(chain.getArg(0));
+            if (!constraintGate.shouldDispatch(state, true)) {
+                redundantConstraintCalls++;
+                return null;
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // A changed SystemUI event contract must never suppress layout.
+        }
+        return chain.proceed();
     }
 
     private Object interceptSetSlideFraction(XposedInterface.Chain chain) throws Throwable {
@@ -351,6 +408,13 @@ final class HorizontalPanelTransitionHooks {
 
         if (session.isActive() && activeSessionCount > 0) {
             activeSessionCount--;
+        }
+        if (activeSessionCount == 0 && redundantConstraintCalls > 0
+                && reportedConstraintSessions < 3) {
+            reportedConstraintSessions++;
+            module.note("Native constraint coalescer: skipped "
+                    + redundantConstraintCalls + " redundant rebuild requests"
+                    + " during horizontal gesture");
         }
         session.restoreAndEnd(panels);
         sessions.remove(animator);
