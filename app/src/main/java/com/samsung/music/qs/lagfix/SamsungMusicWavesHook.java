@@ -7,8 +7,9 @@ import io.github.libxposed.api.XposedModule;
 /**
  * ShadeSwitch v2: clean area-increase base and tgtr settings.
  *
- * OFF (default): Do not modify Samsung's native horizontal panel gestures,
- * animation fractions, view transforms or frame callbacks.
+ * OFF (default): Apply a bounded spring release curve to Samsung's
+ * existing ValueAnimator. Native gestures, slide callbacks, view rendering
+ * and final panel state remain owned by Samsung.
  *
  * ON: Install the original area-increase NoSwipePanelHooks (header-only
  * vertical pulls with horizontal panel switching disabled).
@@ -58,7 +59,10 @@ public final class SamsungMusicWavesHook extends XposedModule {
             // notification-body interception or custom header animation.
             NoSwipePanelHooks.install(this, loader);
         } else {
-            note("Stock Samsung horizontal gestures/animation preserved (no transition hooks)");
+            // Keep Samsung's native horizontal touch and panel-state pipeline.
+            // Adapt the existing release animator; never run another animator
+            // or apply extra translation/alpha to notification/QS views.
+            NativeHorizontalMotionHooks.install(this, loader);
         }
 
         if (hideQuickQs) {
