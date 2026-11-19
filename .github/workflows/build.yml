@@ -2,7 +2,7 @@ name: Build APKs
 
 on:
   push:
-    branches: [main, no-swipe-panel-switch, area-increase, cust, tgtr]
+    branches: [main, no-swipe-panel-switch, area-increase, cust, tgtr, fix/tgtr-shade-window-pull]
   pull_request:
     branches: [main, no-swipe-panel-switch, area-increase, cust]
   workflow_dispatch:
