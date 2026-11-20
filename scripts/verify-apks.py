@@ -38,6 +38,7 @@ for index, argument in enumerate(sys.argv[1:]):
         assert "Lcom/samsung/music/qs/lagfix/GlassFadeMath;" in classes, "GlassUI fade curve missing"
         assert "Lcom/samsung/music/qs/lagfix/TransitionConstraintGate;" in classes, "Native constraint gate missing"
         assert "Lcom/samsung/music/qs/lagfix/AnimatorFanoutGate;" in classes, "QS animator fanout gate missing"
+        assert "Lcom/samsung/music/qs/lagfix/ColdGpuPipelineWarmup;" in classes, "cold GPU shader warmup missing"
         assert "Lcom/samsung/music/qs/lagfix/GlassMotionPhysics;" not in classes, "Inertial bounce physics unexpectedly included"
         # Prevent old QS lagfix sampling hooks from being reintroduced silently.
         # They are not needed for either v2 mode and do not control frame scheduling.
@@ -56,6 +57,7 @@ for index, argument in enumerate(sys.argv[1:]):
                             b"Glass fade-native horizontal hooks installed",
                             b"Native transition constraint coalescer installed",
                             b"Native QS animator fan-out coalescer installed",
+                            b"Cold GPU pipeline prewarm registered",
                             b"Panel gesture hooks installed",
                             b"Together style compact tile row hook installed"]:
                 assert message in blob, "release lacks its status log line: " + message.decode()
