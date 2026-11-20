@@ -5,7 +5,7 @@ import android.util.Log;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * Glass Fade Constraints: base v2-glass-fade plus targeted native layout coalescing.
+ * Glass Fade Native Cold Init: deferred read-only native animator reference preparation after a real panel opening.
  *
  * OFF (default): Direct native horizontal page movement with GlassUI's
  * crossfade, without elastic springs, bounce or independent settling inertia.
