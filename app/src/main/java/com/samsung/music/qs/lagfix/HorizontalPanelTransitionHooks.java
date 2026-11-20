@@ -315,11 +315,13 @@ final class HorizontalPanelTransitionHooks {
                 return chain.proceed();
             }
 
-            Trace.beginSection("ShadeSwitch:firstSwipeComposePin");
-            try {
-                pinComposeSlideFractionOnce(session);
-            } finally {
-                Trace.endSection();
+            if (!session.isComposeSlideFractionPinned()) {
+                Trace.beginSection("ShadeSwitch:firstSwipeComposePin");
+                try {
+                    pinComposeSlideFractionOnce(session);
+                } finally {
+                    Trace.endSection();
+                }
             }
             if (!session.drawablesPrepared) {
                 Trace.beginSection("ShadeSwitch:firstSwipePrepareDrawables");
@@ -627,11 +629,15 @@ final class HorizontalPanelTransitionHooks {
         }
         session.restoreAndEnd(panels);
         sessions.remove(animator);
-        // Keep the read-only graph cache for the next swipe; the actual
-        // view identity check prevents stale re-use after reinflation.
-        if (panels.matchesBoundViews(animator, session)) {
-            preboundSessions.put(animator, session);
-        } else {
+        // The cache is purely optional: failures to verify it must never
+        // interfere with the already-completed native swipe/settlement.
+        try {
+            if (panels.matchesBoundViews(animator, session)) {
+                preboundSessions.put(animator, session);
+            } else {
+                preboundSessions.remove(animator);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
             preboundSessions.remove(animator);
         }
         if (composeAdapter != null) {
