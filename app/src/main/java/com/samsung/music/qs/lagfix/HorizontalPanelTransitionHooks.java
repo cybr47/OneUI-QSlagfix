@@ -184,9 +184,10 @@ final class HorizontalPanelTransitionHooks {
             pendingPrebind.remove(animator);
             if (failed || !mainThread() || activeSessionCount > 0) return;
             try {
-                if (panels.getTransitionState(animator)
-                        == HorizontalTransitionMath.TRANSITION_STATE
-                        || !panels.isSplitHelperReady(animator)) return;
+                if (!NativeColdInitPolicy.canPrebind(
+                        panels.getTransitionState(animator),
+                        panels.isSplitHelperReady(animator),
+                        activeSessionCount > 0)) return;
                 HorizontalSwipeSession cached = preboundSessions.get(animator);
                 if (panels.matchesBoundViews(animator, cached)) return;
                 HorizontalSwipeSession prepared = new HorizontalSwipeSession();
