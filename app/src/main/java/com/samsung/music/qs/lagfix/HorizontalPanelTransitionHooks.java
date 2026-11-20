@@ -284,10 +284,17 @@ final class HorizontalPanelTransitionHooks {
                     Trace.endSection();
                     if (reportedColdSwipeTimings < 5) {
                         reportedColdSwipeTimings++;
-                        module.note("Native cold init: first swipe setup "
-                                + ((SystemClock.elapsedRealtimeNanos() - setupStartNs) / 1_000_000f)
-                                + "ms; cache hits=" + preparedHitCount
-                                + ", misses=" + preparedMissCount);
+                        final float setupMs = (SystemClock.elapsedRealtimeNanos()
+                                - setupStartNs) / 1_000_000f;
+                        final int hits = preparedHitCount;
+                        final int misses = preparedMissCount;
+                        // Never synchronously log inside the first animation
+                        // frame. The trace sections are immediately available;
+                        // send the human-readable timing after the gesture.
+                        mainHandler.postDelayed(() ->
+                                module.note("Native cold init: first swipe setup "
+                                        + setupMs + "ms; cache hits=" + hits
+                                        + ", misses=" + misses), 1_000L);
                     }
                 }
             }
