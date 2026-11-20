@@ -13,6 +13,7 @@ import android.graphics.PixelFormat;
 import android.graphics.RenderNode;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -142,7 +143,10 @@ final class ColdGpuPipelineWarmup {
             return;
         }
         try {
-            if (!HardwareRenderer.isDrawingEnabled()) {
+            // HardwareRenderer.isDrawingEnabled() was introduced in API 33.
+            // This module still declares minSdk 31 for the other gesture modes.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && !HardwareRenderer.isDrawingEnabled()) {
                 schedule(ColdGpuWarmupPolicy.INTERVAL_MS);
                 return;
             }
