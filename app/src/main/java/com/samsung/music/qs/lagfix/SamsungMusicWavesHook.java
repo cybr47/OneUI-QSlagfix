@@ -5,7 +5,7 @@ import android.util.Log;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * Glass Fade Constraints: base v2-glass-fade plus targeted native layout coalescing.
+ * Glass Fade Cold Prewarm: retain native fade, layout and animator-fanout optimizations.
  *
  * OFF (default): Direct native horizontal page movement with GlassUI's
  * crossfade, without elastic springs, bounce or independent settling inertia.
@@ -62,6 +62,9 @@ public final class SamsungMusicWavesHook extends XposedModule {
             // Keep the tested GlassUI crossfade on native Samsung panels,
             // using direct native progress with no extra spring/frame loop.
             HorizontalPanelTransitionHooks.install(this, loader);
+            // Synthetic offscreen GPU shader warmup: runs only from SystemUI
+            // idle worker and screen-on/user-present events, never per frame.
+            ColdGpuPipelineWarmup.install(this);
         }
 
         if (hideQuickQs) {

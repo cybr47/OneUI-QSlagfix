@@ -1,28 +1,15 @@
 # Changelog
 
-## v2-glass-fade-eventperf — scoped QS animator callback deduplication
+## v2-glass-fade-cold-prewarm — experimental first-gesture GPU pipeline cache preparation
 
-- Based on the 6.82% jank `v2-glass-fade-constraints` experiment, with identical fade and native pages.
-- Avoid repeated per-fraction Java Stream fan-out in Samsung's QS animator manager when `state` and `enabled` are unchanged during an already-owned horizontal slide.
-- Preserve initial, enabled-changing, final, disabled, and non-horizontal transitions; add regression tests and runtime skipped-event counters.
-- Keep the existing layout-constraint coalescer intact; no additional drawing, Compose, or media hooks.
-- Performance goal: approach GlassUI's 5.08% reference, but **not claimed or proven** until on-device measurements.
+- Keep all native panel visual effects, fade, gesture tracking and event/constraint coalescing from 2.6.4 unchanged.
+- Use an isolated one-shot GPU draw on a tiny offscreen ImageReader/RenderNode surface to opportunistically compile shared HWUI fill/rounded-rectangle pipelines before first shade use.
+- Schedule after SystemUI readiness, screen-on and unlock; maintain every seven minutes only while screen remains interactive, never during native horizontal slide.
+- Dedicated background HandlerThread; prompt GPU buffer consumption, resource cleanup, bounded logs and one-failure disable.
+- Add pure scheduling-policy tests to forbid screen-off and active-transition GPU work.
+- Motivated by recorded 84.8ms shade frame, including 72.8ms Vulkan pipeline creation. Runtime effectiveness is unproven.
 
+## v2-glass-fade-eventperf — 2.6.4 baseline
 
-## v2-glass-fade-constraints — source-verified native layout optimization
-
-- Based on the visually preferred `v2-glass-fade`; excludes the later `fcc6466` hot-path experiment.
-- Inspect actual One UI 9 SystemUI.apk SHA-256 `81a9e975…`:
-  the Samsung split helper dispatches a transition event for each drag fraction,
-  and one listener posts `ConstraintSet.clone/applyTo` despite never reading the fraction.
-- Add an **optional, narrowly scoped listener hook** to forward the first transition event,
-  then skip duplicate transient events for that listener only while a horizontal swipe is active.
-- Never drop discrete completion, vertical/normal, configuration, layout, media, notification
-  blur, Compose or other event listeners.
-- Log capped per-gesture skipped rebuild counts, test exact pass-through/reset semantics.
-- No new animation curve, layer promotion, spring or view modification.
-- Effect on FPS / first-open responsiveness is unverified until on-device trace.
-
-## v2-glass-fade — fade without bounce
-
-- Native full-width horizontal panel slide and GlassUI crossfade; no spring bounce.
+- Keep native constraints optimization and scope-limited QS animator fan-out coalescing.
+- Historical 6.82% shade jank reference from 2.6.3 is not a measured result for the new prewarm.

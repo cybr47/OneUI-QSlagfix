@@ -16,7 +16,7 @@ android {
         minSdk = 31
         targetSdk = 36
         versionCode = 9
-        versionName = "2.6.4-glass-eventperf"
+        versionName = "2.6.5-cold-prewarm"
     }
 
     buildTypes {

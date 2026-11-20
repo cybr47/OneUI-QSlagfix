@@ -168,6 +168,9 @@ final class HorizontalPanelTransitionHooks {
                     redundantManagerFanouts = 0;
                 }
                 activeSessionCount++;
+                if (activeSessionCount == 1) {
+                    ColdGpuPipelineWarmup.markHorizontalGesture(true);
+                }
                 panels.bindSession(animator, session);
                 if (session.composeAdapter != null) {
                     adapterSessions.put(session.composeAdapter, session);
@@ -466,6 +469,9 @@ final class HorizontalPanelTransitionHooks {
 
         if (session.isActive() && activeSessionCount > 0) {
             activeSessionCount--;
+            if (activeSessionCount == 0) {
+                ColdGpuPipelineWarmup.markHorizontalGesture(false);
+            }
         }
         if (activeSessionCount == 0 && redundantConstraintCalls > 0
                 && reportedConstraintSessions < 3) {
@@ -502,6 +508,7 @@ final class HorizontalPanelTransitionHooks {
         if (!failed) {
             failed = true;
             activeSessionCount = 0;
+            ColdGpuPipelineWarmup.markHorizontalGesture(false);
             for (HorizontalSwipeSession session : sessions.values()) {
                 if (session != null && session.isActive()) {
                     try {
