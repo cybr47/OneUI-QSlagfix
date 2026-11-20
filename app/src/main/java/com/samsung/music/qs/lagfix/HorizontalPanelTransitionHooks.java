@@ -1,6 +1,9 @@
 package com.samsung.music.qs.lagfix;
 
+import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
+import android.os.Trace;
 import android.view.View;
 import android.view.ViewParent;
 import java.lang.reflect.Method;
@@ -18,6 +21,16 @@ final class HorizontalPanelTransitionHooks {
     private final HorizontalTransitionPanels panels;
     private final WeakHashMap<Object, HorizontalSwipeSession> sessions = new WeakHashMap<>();
     private final WeakHashMap<Object, HorizontalSwipeSession> adapterSessions = new WeakHashMap<>();
+    // No visual preparation occurs outside a real horizontal session.
+    // Only Samsung's already-initialized animator/view identities are cached.
+    private final WeakHashMap<Object, HorizontalSwipeSession> preboundSessions =
+            new WeakHashMap<>();
+    private final WeakHashMap<Object, Runnable> pendingPrebind = new WeakHashMap<>();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private int reportedColdSwipeTimings;
+    private int preparedHitCount;
+    private int preparedMissCount;
+
     private int activeSessionCount;
     private boolean internalSlideFractionWrite;
     private volatile boolean failed;
@@ -42,6 +55,29 @@ final class HorizontalPanelTransitionHooks {
             handles.add(module.hook(hooks.panels.slide)
                     .setId("horizontal-panel-slide")
                     .intercept(hooks::interceptSlide));
+            // Native Cold Init is optional. If a future Samsung ROM renames
+            // either lifecycle method, retain the entire tested 2.6.4 fade,
+            // constraint coalescer, and animator fan-out behavior.
+            if (hooks.panels.updateAnimators != null) {
+                try {
+                    handles.add(module.hook(hooks.panels.updateAnimators)
+                            .setId("coldinit-native-animator-ready")
+                            .intercept(hooks::interceptAnimatorViewsReady));
+                } catch (Throwable optionalError) {
+                    module.warn("Native Cold Init animator-ready hook unavailable; "
+                            + "horizontal fade remains enabled", optionalError);
+                }
+            }
+            if (hooks.panels.destroyQSViews != null) {
+                try {
+                    handles.add(module.hook(hooks.panels.destroyQSViews)
+                            .setId("coldinit-native-views-destroyed")
+                            .intercept(hooks::interceptAnimatorViewsDestroyed));
+                } catch (Throwable optionalError) {
+                    module.warn("Native Cold Init destroy-view hook unavailable; "
+                            + "horizontal fade remains enabled", optionalError);
+                }
+            }
             handles.add(module.hook(hooks.panels.onTransitionStateChanged)
                     .setId("horizontal-panel-state")
                     .intercept(hooks::interceptStateChanged));
@@ -119,6 +155,74 @@ final class HorizontalPanelTransitionHooks {
         }
     }
 
+    /**
+     * Native updateAnimators() has already completed here. Defer reference
+     * resolution by 48ms so the native opening/layout frame isn't burdened
+     * by even read-only reflection. If views aren't ready, normal swipe binds.
+     */
+    private Object interceptAnimatorViewsReady(XposedInterface.Chain chain)
+            throws Throwable {
+        Object animator = chain.getThisObject();
+        if (animator != null && mainThread()) {
+            invalidatePrepared(animator);
+        }
+        Object result = chain.proceed();
+        if (!failed && animator != null && mainThread()) {
+            schedulePrebind(animator);
+        }
+        return result;
+    }
+
+    private Object interceptAnimatorViewsDestroyed(XposedInterface.Chain chain)
+            throws Throwable {
+        Object animator = chain.getThisObject();
+        if (animator != null && mainThread()) {
+            invalidatePrepared(animator);
+        }
+        return chain.proceed();
+    }
+
+    private void invalidatePrepared(Object animator) {
+        preboundSessions.remove(animator);
+        Runnable pending = pendingPrebind.remove(animator);
+        if (pending != null) mainHandler.removeCallbacks(pending);
+    }
+
+    private void schedulePrebind(Object animator) {
+        if (failed || animator == null || activeSessionCount > 0) return;
+        // A fresh native graph or settled state can rearm the cache. Never
+        // populate it repeatedly for each drag fraction / render frame.
+        Runnable previous = pendingPrebind.remove(animator);
+        if (previous != null) mainHandler.removeCallbacks(previous);
+        Runnable task = () -> {
+            pendingPrebind.remove(animator);
+            if (failed || !mainThread() || activeSessionCount > 0) return;
+            try {
+                if (!NativeColdInitPolicy.canPrebind(
+                        panels.getTransitionState(animator),
+                        panels.isSplitHelperReady(animator),
+                        activeSessionCount > 0)) return;
+                HorizontalSwipeSession cached = preboundSessions.get(animator);
+                if (panels.matchesBoundViews(animator, cached)) return;
+                HorizontalSwipeSession prepared = new HorizontalSwipeSession();
+                Trace.beginSection("ShadeSwitch:prebindNativePanelRefs");
+                try {
+                    panels.bindSession(animator, prepared);
+                } finally {
+                    Trace.endSection();
+                }
+                if (panels.matchesBoundViews(animator, prepared)) {
+                    preboundSessions.put(animator, prepared);
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                // Optional optimization only. The existing first-swipe
+                // slow-path still works unchanged if early binding fails.
+            }
+        };
+        pendingPrebind.put(animator, task);
+        mainHandler.postDelayed(task, 48L);
+    }
+
     private Object interceptSlide(XposedInterface.Chain chain) throws Throwable {
         if (failed || !mainThread()) {
             return chain.proceed();
@@ -156,21 +260,66 @@ final class HorizontalPanelTransitionHooks {
 
             HorizontalSwipeSession session = sessions.get(animator);
             if (session == null) {
-                session = new HorizontalSwipeSession();
+                // Earlier NativeColdInit work runs only after Samsung has
+                // opened the panel or refreshed its animator view graph.
+                // A view-identity mismatch means Samsung reinflated content:
+                // discard it and use the original synchronous bind.
+                HorizontalSwipeSession prepared = preboundSessions.get(animator);
+                boolean cacheHit = false;
+                if (prepared != null) {
+                    try {
+                        cacheHit = panels.matchesBoundViews(animator, prepared);
+                    } catch (ReflectiveOperationException | RuntimeException ignored) {
+                        // A failed cache check is a miss, NOT a reason to
+                        // disable the established native slide implementation.
+                        preboundSessions.remove(animator);
+                    }
+                }
+                session = cacheHit ? prepared : new HorizontalSwipeSession();
                 sessions.put(animator, session);
+                if (cacheHit) preparedHitCount++;
+                else {
+                    preparedMissCount++;
+                    preboundSessions.remove(animator);
+                }
             }
             if (!session.isActive()) {
-                session.begin();
-                if (activeSessionCount == 0) {
-                    constraintGate.start();
-                    redundantConstraintCalls = 0;
-                    fanoutGate.reset();
-                    redundantManagerFanouts = 0;
-                }
-                activeSessionCount++;
-                panels.bindSession(animator, session);
-                if (session.composeAdapter != null) {
-                    adapterSessions.put(session.composeAdapter, session);
+                long setupStartNs = SystemClock.elapsedRealtimeNanos();
+                Trace.beginSection("ShadeSwitch:firstSwipeSessionSetup");
+                try {
+                    session.begin();
+                    if (activeSessionCount == 0) {
+                        constraintGate.start();
+                        redundantConstraintCalls = 0;
+                        fanoutGate.reset();
+                        redundantManagerFanouts = 0;
+                    }
+                    activeSessionCount++;
+                    if (session.qsRootView == null || session.shadeRootView == null) {
+                        panels.bindSession(animator, session);
+                        if (panels.matchesBoundViews(animator, session)) {
+                            preboundSessions.put(animator, session);
+                        }
+                    }
+                    if (session.composeAdapter != null) {
+                        adapterSessions.put(session.composeAdapter, session);
+                    }
+                } finally {
+                    Trace.endSection();
+                    if (reportedColdSwipeTimings < 5) {
+                        reportedColdSwipeTimings++;
+                        final float setupMs = (SystemClock.elapsedRealtimeNanos()
+                                - setupStartNs) / 1_000_000f;
+                        final int hits = preparedHitCount;
+                        final int misses = preparedMissCount;
+                        // Never synchronously log inside the first animation
+                        // frame. The trace sections are immediately available;
+                        // send the human-readable timing after the gesture.
+                        mainHandler.postDelayed(() ->
+                                module.note("Native cold init: first swipe setup "
+                                        + setupMs + "ms; cache hits=" + hits
+                                        + ", misses=" + misses), 1_000L);
+                    }
                 }
             }
 
@@ -197,8 +346,22 @@ final class HorizontalPanelTransitionHooks {
                 return chain.proceed();
             }
 
-            pinComposeSlideFractionOnce(session);
-            panels.prepareDrawables(session);
+            if (!session.isComposeSlideFractionPinned()) {
+                Trace.beginSection("ShadeSwitch:firstSwipeComposePin");
+                try {
+                    pinComposeSlideFractionOnce(session);
+                } finally {
+                    Trace.endSection();
+                }
+            }
+            if (!session.drawablesPrepared) {
+                Trace.beginSection("ShadeSwitch:firstSwipePrepareDrawables");
+                try {
+                    panels.prepareDrawables(session);
+                } finally {
+                    Trace.endSection();
+                }
+            }
             applyGlassFadeFrame(session, frame.qsShown, width);
             if (observedHorizontalFrames++ < 3) {
                 module.note("Glass fade frame applied; fraction=" + fraction
@@ -353,8 +516,22 @@ final class HorizontalPanelTransitionHooks {
         Object animator = chain.getThisObject();
         HorizontalSwipeSession session = animator != null ? sessions.get(animator) : null;
         if (session == null || !session.isActive()) {
-            // No horizontal swipe was active: leave ordinary shade/lockscreen transitions untouched.
-            return chain.proceed();
+            // The stock Samsung state change is always executed first.
+            // Settled QS/SHADE state marks a real panel opening; defer
+            // read-only native reference binding until after the frame.
+            Object result = chain.proceed();
+            if (!failed && animator != null) {
+                try {
+                    int state = panels.getEventState(chain.getArg(0));
+                    if (state == HorizontalTransitionMath.QS_STATE
+                            || state == HorizontalTransitionMath.SHADE_STATE) {
+                        schedulePrebind(animator);
+                    }
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // Never affect stock panel state handling.
+                }
+            }
+            return result;
         }
 
         int newState;
@@ -483,6 +660,17 @@ final class HorizontalPanelTransitionHooks {
         }
         session.restoreAndEnd(panels);
         sessions.remove(animator);
+        // The cache is purely optional: failures to verify it must never
+        // interfere with the already-completed native swipe/settlement.
+        try {
+            if (panels.matchesBoundViews(animator, session)) {
+                preboundSessions.put(animator, session);
+            } else {
+                preboundSessions.remove(animator);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            preboundSessions.remove(animator);
+        }
         if (composeAdapter != null) {
             adapterSessions.remove(composeAdapter);
         }
@@ -512,6 +700,11 @@ final class HorizontalPanelTransitionHooks {
             }
             sessions.clear();
             adapterSessions.clear();
+            for (Runnable pending : pendingPrebind.values()) {
+                mainHandler.removeCallbacks(pending);
+            }
+            pendingPrebind.clear();
+            preboundSessions.clear();
             module.warn("Horizontal panel transition hooks disabled until SystemUI restarts: unexpected contract failure", error);
         }
     }

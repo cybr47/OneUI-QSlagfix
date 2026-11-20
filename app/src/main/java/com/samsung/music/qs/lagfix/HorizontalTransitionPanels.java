@@ -12,6 +12,10 @@ import java.lang.reflect.Method;
  */
 final class HorizontalTransitionPanels implements HorizontalSwipeSession.PropertyAccess<View> {
     final Method slide;
+    // Samsung's genuine native lifecycle: updateAnimators() refreshes the
+    // animator's view wrappers after panel inflation or configuration changes.
+    final Method updateAnimators;
+    final Method destroyQSViews;
     final Method onTransitionStateChanged;
     final Method clearAnimationState;
     final Method onPanelClosed;
@@ -29,6 +33,7 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
     private final Method helperIsReversed;
     private final Method helperUpdatePanelVisibility;
     private final Method lazyGetValue;
+    private final Method lazyIsInitialized;
     private final Method stateFlowGetValue;
 
     private final Field panelTransitionState;
@@ -86,6 +91,8 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         Class<?> stateFlowType = Class.forName("kotlinx.coroutines.flow.StateFlow", false, loader);
 
         slide = method(animatorType, "slide", float.class, float.class, directionType, int.class);
+        updateAnimators = optionalMethod(animatorType, "updateAnimators");
+        destroyQSViews = optionalMethod(animatorType, "destroyQSViews");
         onTransitionStateChanged = method(animatorType, "onPanelTransitionStateChanged", eventType);
         clearAnimationState = method(animatorType, "clearAnimationState");
         onPanelClosed = optionalMethod(animatorType, "onPanelClosed$1");
@@ -103,6 +110,7 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         helperIsReversed = method(helperType, "isReversed");
         helperUpdatePanelVisibility = method(helperType, "updatePanelVisibility");
         lazyGetValue = method(lazyType, "getValue");
+        lazyIsInitialized = optionalMethod(lazyType, "isInitialized");
         stateFlowGetValue = method(stateFlowType, "getValue");
 
         panelTransitionState = field(animatorType, "panelTransitionState");
@@ -228,6 +236,38 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
             notifBlurAlphaFromParent.setFloat(notificationView, rawParentAlpha);
         } catch (IllegalAccessException ignored) {
         }
+    }
+
+    /**
+     * Detect whether Samsung has already created the split helper. A cache
+     * warm-up must never initialize the Kotlin Lazy ahead of native SystemUI.
+     */
+    boolean isSplitHelperReady(Object animator) throws ReflectiveOperationException {
+        Object lazy = secPanelSplitHelperLazy.get(animator);
+        return lazy != null && lazyIsInitialized != null
+                && (boolean) lazyIsInitialized.invoke(lazy);
+    }
+
+    /**
+     * Validate a prebound view graph against Samsung's current animator views.
+     * Do not rely on arbitrary idle duration: if SystemUI reinflates its views,
+     * the wrapper identities change and the next swipe falls back to bindSession.
+     */
+    boolean matchesBoundViews(Object animator, HorizontalSwipeSession bound)
+            throws ReflectiveOperationException {
+        return bound != null
+                && bound.qsRootView != null
+                && bound.shadeRootView != null
+                && bound.splitHelper != null
+                && bound.qsAnimView == qsRootView.get(animator)
+                && bound.shadeAnimView == shadeRootView.get(animator)
+                && bound.buttonAnimView == buttonContainer.get(animator)
+                && bound.clockDateAnimView == clockDateContainer.get(animator)
+                && bound.headerAnimView == header.get(animator)
+                && bound.plmnAnimView == plmn.get(animator)
+                && bound.qsButtonsContainer == qsButtonsContainer.get(animator)
+                && bound.composeAdapter == composeAdapter.get(animator)
+                && bound.reversed == (boolean) helperIsReversed.invoke(bound.splitHelper);
     }
 
     /**
