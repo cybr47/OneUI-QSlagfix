@@ -1,5 +1,15 @@
 # Changelog
 
+## v2-glass-fade-native-coldinit (2.6.6) — read-only first-swipe preparation
+
+- Derived from the working 2.6.4 eventperf branch, with no synthetic GPU prewarm.
+- Defer **read-only** Samsung animator/view reference binding until just after a settled native QS/notification panel opening; update the cache after native `updateAnimators()`, and invalidate on `destroyQSViews()`.
+- Only use a cached graph when Samsung's current QS/shade view wrapper identities and compose adapter still match; otherwise preserve original first-frame reference binding.
+- Never force lazy SystemUI initialization, touch actual view properties or Compose slide fractions before a gesture, add a renderer, hold a wakelock or run periodic tasks.
+- Add first-frame Perfetto trace points and delayed, capped cache hit/miss timings. Tests guard native state and lazy lifecycle.
+- Performance and visual equivalence require on-device testing; the original 2.6.4 branch stays available.
+
+
 ## v2-glass-fade-eventperf — scoped QS animator callback deduplication
 
 - Based on the 6.82% jank `v2-glass-fade-constraints` experiment, with identical fade and native pages.
