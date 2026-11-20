@@ -257,9 +257,16 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         return bound != null
                 && bound.qsRootView != null
                 && bound.shadeRootView != null
+                && bound.splitHelper != null
                 && bound.qsAnimView == qsRootView.get(animator)
                 && bound.shadeAnimView == shadeRootView.get(animator)
-                && bound.composeAdapter == composeAdapter.get(animator);
+                && bound.buttonAnimView == buttonContainer.get(animator)
+                && bound.clockDateAnimView == clockDateContainer.get(animator)
+                && bound.headerAnimView == header.get(animator)
+                && bound.plmnAnimView == plmn.get(animator)
+                && bound.qsButtonsContainer == qsButtonsContainer.get(animator)
+                && bound.composeAdapter == composeAdapter.get(animator)
+                && bound.reversed == (boolean) helperIsReversed.invoke(bound.splitHelper);
     }
 
     /**
