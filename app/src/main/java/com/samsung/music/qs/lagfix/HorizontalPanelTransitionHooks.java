@@ -55,15 +55,29 @@ final class HorizontalPanelTransitionHooks {
             handles.add(module.hook(hooks.panels.slide)
                     .setId("horizontal-panel-slide")
                     .intercept(hooks::interceptSlide));
-            // Cache *references only* AFTER Samsung has updated real QS view
-            // wrappers, and invalidate immediately when those views are
-            // destroyed. Nothing gets made visible, measured or rendered.
-            handles.add(module.hook(hooks.panels.updateAnimators)
-                    .setId("coldinit-native-animator-ready")
-                    .intercept(hooks::interceptAnimatorViewsReady));
-            handles.add(module.hook(hooks.panels.destroyQSViews)
-                    .setId("coldinit-native-views-destroyed")
-                    .intercept(hooks::interceptAnimatorViewsDestroyed));
+            // Native Cold Init is optional. If a future Samsung ROM renames
+            // either lifecycle method, retain the entire tested 2.6.4 fade,
+            // constraint coalescer, and animator fan-out behavior.
+            if (hooks.panels.updateAnimators != null) {
+                try {
+                    handles.add(module.hook(hooks.panels.updateAnimators)
+                            .setId("coldinit-native-animator-ready")
+                            .intercept(hooks::interceptAnimatorViewsReady));
+                } catch (Throwable optionalError) {
+                    module.warn("Native Cold Init animator-ready hook unavailable; "
+                            + "horizontal fade remains enabled", optionalError);
+                }
+            }
+            if (hooks.panels.destroyQSViews != null) {
+                try {
+                    handles.add(module.hook(hooks.panels.destroyQSViews)
+                            .setId("coldinit-native-views-destroyed")
+                            .intercept(hooks::interceptAnimatorViewsDestroyed));
+                } catch (Throwable optionalError) {
+                    module.warn("Native Cold Init destroy-view hook unavailable; "
+                            + "horizontal fade remains enabled", optionalError);
+                }
+            }
             handles.add(module.hook(hooks.panels.onTransitionStateChanged)
                     .setId("horizontal-panel-state")
                     .intercept(hooks::interceptStateChanged));
@@ -251,7 +265,16 @@ final class HorizontalPanelTransitionHooks {
                 // A view-identity mismatch means Samsung reinflated content:
                 // discard it and use the original synchronous bind.
                 HorizontalSwipeSession prepared = preboundSessions.get(animator);
-                boolean cacheHit = panels.matchesBoundViews(animator, prepared);
+                boolean cacheHit = false;
+                if (prepared != null) {
+                    try {
+                        cacheHit = panels.matchesBoundViews(animator, prepared);
+                    } catch (ReflectiveOperationException | RuntimeException ignored) {
+                        // A failed cache check is a miss, NOT a reason to
+                        // disable the established native slide implementation.
+                        preboundSessions.remove(animator);
+                    }
+                }
                 session = cacheHit ? prepared : new HorizontalSwipeSession();
                 sessions.put(animator, session);
                 if (cacheHit) preparedHitCount++;
