@@ -43,10 +43,6 @@ import java.lang.reflect.Method;
  * experiment disables itself without changing ShadeSwitch's existing hooks.
  */
 final class ColdGpuPipelineWarmup {
-    private static final long IDLE_INTERVAL_MS = 7 * 60_000L;
-    private static final long MIN_REWARM_MS = 65_000L;
-    private static final long RECENT_PANEL_MS = 3_000L;
-
     private static volatile boolean horizontalGesture;
     private static volatile long lastGestureUptime;
     private static ColdGpuPipelineWarmup installed;
@@ -55,6 +51,7 @@ final class ColdGpuPipelineWarmup {
     private final Application application;
     private final PowerManager power;
     private final Handler worker;
+    private final HandlerThread thread;
     private final Runnable pendingWarm;
     private final BroadcastReceiver displayReceiver;
     private volatile boolean disabled;
@@ -67,7 +64,7 @@ final class ColdGpuPipelineWarmup {
         this.module = module;
         this.application = application;
         this.power = (PowerManager) application.getSystemService(Context.POWER_SERVICE);
-        HandlerThread thread = new HandlerThread("ShadeSwitch-GPU-Prewarm",
+        this.thread = new HandlerThread("ShadeSwitch-GPU-Prewarm",
                 android.os.Process.THREAD_PRIORITY_BACKGROUND);
         thread.start();
         this.worker = new Handler(thread.getLooper());
@@ -88,6 +85,7 @@ final class ColdGpuPipelineWarmup {
 
     static void install(SamsungMusicWavesHook module) {
         if (installed != null) return;
+        ColdGpuPipelineWarmup warmup = null;
         try {
             Class<?> activityThread = Class.forName("android.app.ActivityThread");
             Method currentApplication = activityThread.getDeclaredMethod("currentApplication");
@@ -97,7 +95,7 @@ final class ColdGpuPipelineWarmup {
                 module.warn("GPU prewarm unavailable: SystemUI Application not ready", null);
                 return;
             }
-            ColdGpuPipelineWarmup warmup = new ColdGpuPipelineWarmup(module, application);
+            warmup = new ColdGpuPipelineWarmup(module, application);
             IntentFilter filter = new IntentFilter();
             filter.addAction(Intent.ACTION_SCREEN_ON);
             filter.addAction(Intent.ACTION_SCREEN_OFF);
@@ -111,6 +109,10 @@ final class ColdGpuPipelineWarmup {
                     + " (synthetic offscreen scene, screen-on + 7min idle)");
             warmup.schedule(1_500L);
         } catch (Throwable error) {
+            if (warmup != null) {
+                warmup.disabled = true;
+                warmup.thread.quitSafely();
+            }
             module.warn("GPU prewarm registration unavailable; normal panels intact", error);
         }
     }
@@ -128,19 +130,20 @@ final class ColdGpuPipelineWarmup {
     }
 
     private void runWarmSafely() {
-        if (disabled || power == null || !power.isInteractive()) return;
+        if (disabled) return;
         long now = SystemClock.uptimeMillis();
-        if (horizontalGesture || now - lastGestureUptime < RECENT_PANEL_MS) {
-            schedule(RECENT_PANEL_MS);
-            return;
-        }
-        if (warmCount > 0 && now - lastWarmUptime < MIN_REWARM_MS) {
-            schedule(IDLE_INTERVAL_MS);
+        long delay = ColdGpuWarmupPolicy.nextDelay(
+                now, power != null && power.isInteractive(),
+                horizontalGesture, lastGestureUptime,
+                lastWarmUptime, warmCount);
+        if (delay < 0L) return;
+        if (delay > 0L) {
+            schedule(delay);
             return;
         }
         try {
             if (!HardwareRenderer.isDrawingEnabled()) {
-                schedule(IDLE_INTERVAL_MS);
+                schedule(ColdGpuWarmupPolicy.INTERVAL_MS);
                 return;
             }
             long start = SystemClock.elapsedRealtime();
@@ -168,7 +171,7 @@ final class ColdGpuPipelineWarmup {
                     failure);
             return;
         }
-        schedule(IDLE_INTERVAL_MS);
+        schedule(ColdGpuWarmupPolicy.INTERVAL_MS);
     }
 
     private static int renderOneOffscreenFrame() {
