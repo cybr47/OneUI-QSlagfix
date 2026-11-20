@@ -91,8 +91,8 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         Class<?> stateFlowType = Class.forName("kotlinx.coroutines.flow.StateFlow", false, loader);
 
         slide = method(animatorType, "slide", float.class, float.class, directionType, int.class);
-        updateAnimators = method(animatorType, "updateAnimators");
-        destroyQSViews = method(animatorType, "destroyQSViews");
+        updateAnimators = optionalMethod(animatorType, "updateAnimators");
+        destroyQSViews = optionalMethod(animatorType, "destroyQSViews");
         onTransitionStateChanged = method(animatorType, "onPanelTransitionStateChanged", eventType);
         clearAnimationState = method(animatorType, "clearAnimationState");
         onPanelClosed = optionalMethod(animatorType, "onPanelClosed$1");
@@ -110,7 +110,7 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
         helperIsReversed = method(helperType, "isReversed");
         helperUpdatePanelVisibility = method(helperType, "updatePanelVisibility");
         lazyGetValue = method(lazyType, "getValue");
-        lazyIsInitialized = method(lazyType, "isInitialized");
+        lazyIsInitialized = optionalMethod(lazyType, "isInitialized");
         stateFlowGetValue = method(stateFlowType, "getValue");
 
         panelTransitionState = field(animatorType, "panelTransitionState");
@@ -244,7 +244,8 @@ final class HorizontalTransitionPanels implements HorizontalSwipeSession.Propert
      */
     boolean isSplitHelperReady(Object animator) throws ReflectiveOperationException {
         Object lazy = secPanelSplitHelperLazy.get(animator);
-        return lazy != null && (boolean) lazyIsInitialized.invoke(lazy);
+        return lazy != null && lazyIsInitialized != null
+                && (boolean) lazyIsInitialized.invoke(lazy);
     }
 
     /**
